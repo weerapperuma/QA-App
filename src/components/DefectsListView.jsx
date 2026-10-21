@@ -133,6 +133,7 @@ export default function DefectsListView() {
 
       {/* Filter & Search Bar */}
       <div
+        className="defects-filter-bar"
         style={{
           background: 'var(--bg-card)',
           border: '1px solid var(--border-subtle)',
@@ -147,7 +148,7 @@ export default function DefectsListView() {
         }}
       >
         {/* Search */}
-        <div style={{ position: 'relative', minWidth: '240px', flex: 1 }}>
+        <div className="search-input-wrap" style={{ position: 'relative', minWidth: '220px', flex: '1 1 240px' }}>
           <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
@@ -160,7 +161,7 @@ export default function DefectsListView() {
         </div>
 
         {/* Type Filter Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', padding: '2px', borderRadius: 'var(--radius-full)' }}>
+        <div className="defects-type-pills" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', padding: '2px', borderRadius: 'var(--radius-full)', overflowX: 'auto' }}>
           <button
             className={`persona-btn ${typeFilter === 'all' ? 'active-all' : ''}`}
             onClick={() => setTypeFilter('all')}
@@ -184,33 +185,36 @@ export default function DefectsListView() {
           </button>
         </div>
 
-        {/* Feature Filter Dropdown */}
-        <select
-          className="filter-select"
-          value={featureFilter}
-          onChange={(e) => setFeatureFilter(e.target.value)}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
-        >
-          <option value="all">All Features</option>
-          {projectFeatures.map((f) => (
-            <option key={f.id} value={f.id}>
-              📁 {f.name}
-            </option>
-          ))}
-        </select>
+        {/* Filter Dropdowns */}
+        <div className="defects-filter-selects" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Feature Filter Dropdown */}
+          <select
+            className="filter-select"
+            value={featureFilter}
+            onChange={(e) => setFeatureFilter(e.target.value)}
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+          >
+            <option value="all">All Features</option>
+            {projectFeatures.map((f) => (
+              <option key={f.id} value={f.id}>
+                📁 {f.name}
+              </option>
+            ))}
+          </select>
 
-        {/* Status Filter Dropdown */}
-        <select
-          className="filter-select"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
-        >
-          <option value="all">All Statuses</option>
-          <option value="open">Open / In Dev</option>
-          <option value="ready_for_qa">Ready for Retest</option>
-          <option value="verified">Verified & Closed</option>
-        </select>
+          {/* Status Filter Dropdown */}
+          <select
+            className="filter-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open / In Dev</option>
+            <option value="ready_for_qa">Ready for Retest</option>
+            <option value="verified">Verified & Closed</option>
+          </select>
+        </div>
       </div>
 
       {/* Dense High-Capacity Table View */}

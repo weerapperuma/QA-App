@@ -26,6 +26,9 @@ import {
   subscribeFeatures,
   saveFeatureToFirestore,
   deleteFeatureFromFirestore,
+  subscribeModules,
+  saveModuleToFirestore,
+  deleteModuleFromFirestore,
   subscribeTickets,
   saveTicketToFirestore,
   deleteTicketFromFirestore,
@@ -45,6 +48,7 @@ const STORAGE_KEYS = {
   PROJECTS: 'devbridge_projects_v3',
   ACTIVE_PROJECT: 'devbridge_active_proj_v3',
   FEATURES: 'devbridge_features_v3',
+  MODULES: 'devbridge_modules_v3',
   TEAM: 'devbridge_team_v3',
   TICKETS: 'devbridge_tickets_v3',
   SUITES: 'devbridge_suites_v3',
@@ -118,6 +122,18 @@ export function AppProvider({ children }) {
       return INITIAL_FEATURES;
     }
   });
+
+  // Modules State (Containers for features e.g. SETUP, Purchasing and inventory)
+  const [modules, setModules] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.MODULES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isCreateModuleModalOpen, setIsCreateModuleModalOpen] = useState(false);
 
   // Main Team & Users State (Persisted in LocalStorage)
   const [team, setTeam] = useState(() => {
@@ -203,6 +219,10 @@ export function AppProvider({ children }) {
   }, [features]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(modules));
+  }, [modules]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
   }, [tickets]);
 
@@ -253,6 +273,13 @@ export function AppProvider({ children }) {
         }
       }, INITIAL_FEATURES);
 
+      // 3b. Modules (Categories for features)
+      const unsubModules = subscribeModules((firestoreMods) => {
+        if (firestoreMods) {
+          setModules(firestoreMods);
+        }
+      }, []);
+
       // 4. Defects / Tickets
       const unsubTickets = subscribeTickets((firestoreTickets) => {
         if (firestoreTickets) {
@@ -278,6 +305,7 @@ export function AppProvider({ children }) {
         unsubUsers();
         unsubProjects();
         unsubFeatures();
+        unsubModules();
         unsubTickets();
         unsubReleases();
         unsubSuites();
@@ -477,7 +505,61 @@ export function AppProvider({ children }) {
     (projects && projects.find((p) => p.id === activeProjectId)) ||
     (projects && projects[0]) ||
     INITIAL_PROJECTS[0];
-  const projectFeatures = (features || []).filter((f) => f.projectId === (activeProject?.id || 'proj-erp'));
+
+  // ONLY actual features belong in projectFeatures (NOT modules!)
+  const projectFeatures = (features || []).filter(
+    (f) => f.projectId === (activeProject?.id || 'proj-erp') && !f.isMainModule && f.status !== 'module'
+  );
+
+  // Modules belonging to this active project
+  const projectModules = (modules || []).filter(
+    (m) => m.projectId === (activeProject?.id || 'proj-erp')
+  );
+
+  // Distinct module names across project modules and features
+  const allModuleNames = Array.from(
+    new Set([
+      ...projectModules.map((m) => m.name),
+      ...(features || [])
+        .filter((f) => f.isMainModule && f.projectId === (activeProject?.id || 'proj-erp'))
+        .map((f) => f.name),
+      ...projectFeatures
+        .map((f) => f.moduleName)
+        .filter((m) => m && m !== 'General')
+    ])
+  );
+
+  // Auto-migrate any previously created isMainModule features into modules state
+  useEffect(() => {
+    const legacyMainModules = (features || []).filter((f) => f.isMainModule);
+    if (legacyMainModules.length > 0) {
+      let changed = false;
+      let nextMods = [...modules];
+      legacyMainModules.forEach((lmod) => {
+        const modName = (lmod.name || lmod.moduleName || '').trim();
+        if (modName && !nextMods.some((m) => m.name.toLowerCase() === modName.toLowerCase())) {
+          const newMod = {
+            id: lmod.id.startsWith('mod-')
+              ? lmod.id
+              : `mod-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+            projectId: lmod.projectId || activeProjectId,
+            name: modName,
+            description: lmod.description || '',
+            createdAt: lmod.createdAt || new Date().toISOString()
+          };
+          nextMods.push(newMod);
+          changed = true;
+          if (firebaseStatus === 'connected') {
+            saveModuleToFirestore(newMod);
+          }
+        }
+      });
+      if (changed) {
+        setModules(nextMods);
+      }
+    }
+  }, [features]);
+
   const selectedFeature = (features || []).find((f) => f.id === selectedFeatureId) || null;
   const selectedTicket = (tickets || []).find((t) => t.id === selectedTicketId) || null;
   // All bugs & suggestions linked to features in the active project
@@ -530,7 +612,127 @@ export function AppProvider({ children }) {
     addToast(`Project "${newProj.name}" created!`, 'success', 'Project Declared');
   };
 
-  // Feature Actions
+  // Module Actions (Modules are groupings for features, NOT board tickets!)
+  const createModule = async ({ name, description = '' }) => {
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) {
+      addToast('Module name is required.', 'warning');
+      return { success: false, error: 'Module name is required' };
+    }
+
+    const exists = (modules || []).some(
+      (m) => m.projectId === activeProjectId && m.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (exists) {
+      addToast(`Module "${trimmedName}" already exists!`, 'info');
+      setIsCreateModuleModalOpen(false);
+      return { success: true, name: trimmedName };
+    }
+
+    const newMod = {
+      id: `mod-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+      projectId: activeProjectId,
+      name: trimmedName,
+      description: description.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    setModules((prev) => [...prev, newMod]);
+    setIsCreateModuleModalOpen(false);
+
+    if (firebaseStatus === 'connected') {
+      await saveModuleToFirestore(newMod);
+    }
+
+    addToast(`Module "${trimmedName}" created!`, 'success', 'Module Declared');
+    return { success: true, module: newMod };
+  };
+
+  const updateModule = async (moduleId, { name, description }) => {
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) {
+      addToast('Module name is required.', 'warning');
+      return { success: false, error: 'Module name is required' };
+    }
+
+    const mod = modules.find((m) => m.id === moduleId);
+    if (!mod) return { success: false, error: 'Module not found' };
+
+    const oldName = mod.name;
+    const updatedMod = {
+      ...mod,
+      name: trimmedName,
+      description: description !== undefined ? description.trim() : (mod.description || ''),
+      updatedAt: new Date().toISOString()
+    };
+
+    setModules((prev) => prev.map((m) => (m.id === moduleId ? updatedMod : m)));
+
+    if (firebaseStatus === 'connected') {
+      await saveModuleToFirestore(updatedMod);
+    }
+
+    // If module name changed, update any features that belonged to this module name
+    if (oldName.toLowerCase() !== trimmedName.toLowerCase()) {
+      const affected = features.filter(
+        (f) => (f.moduleName || '').trim().toLowerCase() === oldName.trim().toLowerCase()
+      );
+      if (affected.length > 0) {
+        setFeatures((prev) =>
+          prev.map((f) =>
+            (f.moduleName || '').trim().toLowerCase() === oldName.trim().toLowerCase()
+              ? { ...f, moduleName: trimmedName, updatedAt: new Date().toISOString() }
+              : f
+          )
+        );
+        if (firebaseStatus === 'connected') {
+          for (const af of affected) {
+            saveFeatureToFirestore({ ...af, moduleName: trimmedName });
+          }
+        }
+      }
+    }
+
+    addToast(`Module updated to "${trimmedName}"!`, 'success', 'Module Updated');
+    return { success: true, module: updatedMod };
+  };
+
+  const deleteModule = async (moduleId) => {
+    const mod = modules.find((m) => m.id === moduleId);
+    if (!mod) return;
+    const modName = mod.name;
+
+    setModules((prev) => prev.filter((m) => m.id !== moduleId));
+    if (firebaseStatus === 'connected') {
+      await deleteModuleFromFirestore(moduleId);
+    }
+
+    // Move any features under this module to 'General'
+    const affected = features.filter(
+      (f) => (f.moduleName || '').trim().toLowerCase() === modName.trim().toLowerCase()
+    );
+    if (affected.length > 0) {
+      setFeatures((prev) =>
+        prev.map((f) =>
+          (f.moduleName || '').trim().toLowerCase() === modName.trim().toLowerCase()
+            ? { ...f, moduleName: 'General', updatedAt: new Date().toISOString() }
+            : f
+        )
+      );
+      if (firebaseStatus === 'connected') {
+        for (const af of affected) {
+          saveFeatureToFirestore({ ...af, moduleName: 'General' });
+        }
+      }
+    }
+
+    addToast(
+      `Module "${modName}" deleted. ${affected.length > 0 ? `(${affected.length} features moved to General)` : ''}`,
+      'info'
+    );
+  };
+
+  // Feature Actions (Features belong to a Module and appear on the Kanban board)
   const openFeature = (featureOrId) => {
     const id = typeof featureOrId === 'object' ? featureOrId.id : featureOrId;
     setSelectedFeatureId(id);
@@ -540,17 +742,47 @@ export function AppProvider({ children }) {
     setSelectedFeatureId(null);
   };
 
+  const openCreateFeatureModal = (props = null) => {
+    setCreateFeatureModalProps(props);
+    setIsCreateFeatureModalOpen(true);
+  };
+
   const createFeature = async (featData) => {
-    const count = projectFeatures.length + 101;
     const defaultDev = (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
     const defaultQa = (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
+    const moduleName = (featData.moduleName || 'General').trim();
+
+    // Auto-create module in modules if typed and not yet registered
+    if (moduleName && moduleName.toLowerCase() !== 'general') {
+      const modExists = (modules || []).some(
+        (m) => m.projectId === activeProjectId && m.name.toLowerCase() === moduleName.toLowerCase()
+      );
+      if (!modExists) {
+        const autoMod = {
+          id: `mod-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+          projectId: activeProjectId,
+          name: moduleName,
+          description: '',
+          createdAt: new Date().toISOString()
+        };
+        setModules((prev) => [...prev, autoMod]);
+        if (firebaseStatus === 'connected') {
+          saveModuleToFirestore(autoMod);
+        }
+      }
+    }
+
+    const nextCount = projectFeatures.length + 101;
+    const cleanCode = featData.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'FEAT';
     const newFeature = {
-      id: `FEAT-${count}`,
+      id: `FEAT-${nextCount}-${Date.now().toString(36).substring(2, 5)}`,
       projectId: activeProjectId,
-      code: `${activeProject.code}-${featData.name.substring(0, 4).toUpperCase()}`,
-      name: featData.name,
+      code: `${activeProject.code}-${cleanCode}`,
+      name: featData.name.trim(),
       description: featData.description || '',
-      status: 'in_dev',
+      status: featData.status || 'in_dev',
+      isMainModule: false,
+      moduleName: moduleName || 'General',
       assignedDev: featData.assignedDev || defaultDev,
       assignedQa: featData.assignedQa || defaultQa,
       prLink: featData.prLink || '',
@@ -558,7 +790,7 @@ export function AppProvider({ children }) {
       stagingBuild: '',
       environment: 'staging',
       targetRelease: featData.targetRelease || 'v1.0.0',
-      devNotes: featData.devNotes || 'Started development of feature logic and interface.',
+      devNotes: featData.devNotes || 'Started development of feature logic.',
       qaNotes: '',
       bugs: [],
       suggestions: [],
@@ -568,11 +800,37 @@ export function AppProvider({ children }) {
 
     setFeatures((prev) => [newFeature, ...prev]);
     setIsCreateFeatureModalOpen(false);
+    setCreateFeatureModalProps(null);
+
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(newFeature);
     }
-    addToast(`Feature "${newFeature.name}" added to ${activeProject.name}!`, 'success', 'Feature Created');
+
+    addToast(`Feature "${newFeature.name}" created under ${newFeature.moduleName}!`, 'success', 'Feature Created');
     openFeature(newFeature.id);
+    return newFeature;
+  };
+
+  const updateFeatureModule = async (featureId, moduleName) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const resolvedModuleName = (moduleName || 'General').trim();
+    const updatedFeature = {
+      ...feat,
+      moduleName: resolvedModuleName,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Feature "${feat.name}" moved to module "${resolvedModuleName}"`, 'info');
   };
 
   const deleteFeature = async (featureId) => {
@@ -1259,6 +1517,18 @@ export function AppProvider({ children }) {
         updateFeatureBugStatus,
         addSuggestionToFeature,
         updateSuggestionStatus,
+        updateFeatureModule,
+        modules,
+        projectModules,
+        allModuleNames,
+        isCreateModuleModalOpen,
+        setIsCreateModuleModalOpen,
+        createModule,
+        updateModule,
+        deleteModule,
+        openCreateFeatureModal,
+        createFeatureModalProps,
+        setCreateFeatureModalProps,
         isCreateProjectModalOpen,
         setIsCreateProjectModalOpen,
         isCreateFeatureModalOpen,

@@ -15,7 +15,10 @@ import {
   Server,
   ArrowRight,
   Sparkles,
-  Check
+  Check,
+  FolderTree,
+  FolderPlus,
+  ChevronRight
 } from 'lucide-react';
 
 export default function FeatureDetailModal() {
@@ -28,6 +31,11 @@ export default function FeatureDetailModal() {
     addSuggestionToFeature,
     updateSuggestionStatus,
     activeProject,
+    projectFeatures,
+    allModuleNames,
+    openFeature,
+    openCreateFeatureModal,
+    updateFeatureModule,
     team
   } = useApp();
 
@@ -63,6 +71,10 @@ export default function FeatureDetailModal() {
 
   const allBugsVerified = openBugs.length === 0 && bugs.length > 0;
   const canVerifyFeature = criticalOpenBugs.length === 0;
+
+  const availableModules = allModuleNames && allModuleNames.length > 0
+    ? allModuleNames
+    : Array.from(new Set(projectFeatures.map((f) => f.moduleName).filter(Boolean)));
 
   const handleAddBugSubmit = (e) => {
     e.preventDefault();
@@ -138,6 +150,23 @@ export default function FeatureDetailModal() {
               in {activeProject?.name || 'Project'}
             </span>
             {getStatusBadge(selectedFeature.status)}
+
+            {selectedFeature.moduleName && (
+              <span
+                className="tag-pill"
+                style={{
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  color: 'var(--accent-dev)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <FolderTree size={12} />
+                Module: {selectedFeature.moduleName}
+              </span>
+            )}
           </div>
 
           <button className="btn-icon" onClick={closeFeature}>
@@ -146,7 +175,7 @@ export default function FeatureDetailModal() {
         </div>
 
         {/* Body */}
-        <div className="modal-body" style={{ gridTemplateColumns: '1fr 340px' }}>
+        <div className="modal-body feature-modal-body">
           {/* Main Left Content */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Title & Description */}
@@ -340,7 +369,7 @@ export default function FeatureDetailModal() {
                     required
                   />
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="responsive-form-grid-2">
                     <div>
                       <label className="form-label">Severity</label>
                       <select
@@ -367,7 +396,7 @@ export default function FeatureDetailModal() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="responsive-form-grid-2">
                     <input
                       type="text"
                       className="form-input"
@@ -578,7 +607,7 @@ export default function FeatureDetailModal() {
                     required
                   />
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.75rem' }}>
+                  <div className="responsive-form-grid-2">
                     <div>
                       <label className="form-label">Priority</label>
                       <select
@@ -807,6 +836,25 @@ export default function FeatureDetailModal() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Module Selector */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <FolderTree size={13} color="var(--accent-dev)" />
+                <span>Belongs to Module</span>
+              </label>
+              <select
+                className="form-select"
+                value={selectedFeature.moduleName || 'General'}
+                onChange={(e) => updateFeatureModule(selectedFeature.id, e.target.value)}
+              >
+                {availableModules.map((m) => (
+                  <option key={m} value={m}>
+                    📁 {m}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Workflow Status Selector */}

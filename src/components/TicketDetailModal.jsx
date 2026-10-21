@@ -201,10 +201,8 @@ export default function TicketDetailModal() {
 
             {/* Expected vs Actual Comparison */}
             <div
+              className="responsive-form-grid-2"
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem',
                 background: 'var(--bg-secondary)',
                 padding: '1rem',
                 borderRadius: 'var(--radius-md)',

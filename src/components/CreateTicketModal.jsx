@@ -258,7 +258,7 @@ export default function CreateTicketModal() {
             </div>
 
             {/* Row 1: Severity, Priority, Component */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-form-grid-3">
               <div className="form-group">
                 <label className="form-label">Severity Level</label>
                 <select
@@ -305,7 +305,7 @@ export default function CreateTicketModal() {
             </div>
 
             {/* Row 2: Dev & QA Assignees */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-form-grid-2">
               <div className="form-group">
                 <label className="form-label">Assign Developer</label>
                 <select
@@ -412,7 +412,7 @@ export default function CreateTicketModal() {
             </div>
 
             {/* Expected vs Actual */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-form-grid-2">
               <div className="form-group">
                 <label className="form-label">Expected Result</label>
                 <textarea
@@ -437,7 +437,7 @@ export default function CreateTicketModal() {
             </div>
 
             {/* cURL & Log */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-form-grid-2">
               <div className="form-group">
                 <label className="form-label">cURL / Request Snippet (Optional)</label>
                 <textarea

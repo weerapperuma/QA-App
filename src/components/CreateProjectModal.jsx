@@ -70,7 +70,7 @@ export default function CreateProjectModal() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-form-grid-2">
               <div className="form-group">
                 <label className="form-label">Project Code / Prefix</label>
                 <input

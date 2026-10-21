@@ -125,7 +125,7 @@ export default function UserManagementModal() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="responsive-form-grid-2" style={{ marginBottom: '1rem' }}>
               {/* Username */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
@@ -186,7 +186,7 @@ export default function UserManagementModal() {
               <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
                 Assigned Role * (System automatically configures their permissions upon sign-in)
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.65rem' }}>
+              <div className="responsive-form-grid-3">
                 <button
                   type="button"
                   onClick={() => setRole('developer')}
@@ -261,7 +261,7 @@ export default function UserManagementModal() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div className="responsive-form-grid-2" style={{ marginBottom: '1.25rem' }}>
               {/* Full Name */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>

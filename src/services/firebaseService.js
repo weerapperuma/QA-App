@@ -271,6 +271,75 @@ export async function deleteFeatureFromFirestore(featureId) {
 }
 
 // ----------------------------------------------------
+// MODULES COLLECTION (Containers for Features, e.g. SETUP, Purchasing and inventory)
+// ----------------------------------------------------
+
+export function subscribeModules(onModulesUpdate, fallbackModules = []) {
+  if (!firestoreDb) return () => {};
+
+  const modulesCol = collection(firestoreDb, 'modules');
+
+  const unsubscribe = onSnapshot(
+    modulesCol,
+    async (snapshot) => {
+      if (snapshot.empty && fallbackModules.length > 0) {
+        try {
+          for (const mod of fallbackModules) {
+            await setDoc(doc(firestoreDb, 'modules', mod.id), cleanForFirestore({
+              ...mod,
+              updatedAt: new Date().toISOString()
+            }));
+          }
+        } catch (err) {
+          console.warn('Auto-seed modules error:', err);
+        }
+        return;
+      }
+
+      const modules = [];
+      snapshot.forEach((docSnap) => {
+        modules.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      onModulesUpdate(modules);
+    },
+    (err) => {
+      console.warn('Firestore modules subscription error:', err);
+    }
+  );
+
+  return unsubscribe;
+}
+
+export async function saveModuleToFirestore(mod) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    const modRef = doc(firestoreDb, 'modules', mod.id);
+    await setDoc(modRef, cleanForFirestore({
+      ...mod,
+      updatedAt: new Date().toISOString()
+    }), { merge: true });
+    return { success: true };
+  } catch (err) {
+    console.error('saveModuleToFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteModuleFromFirestore(moduleId) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    await deleteDoc(doc(firestoreDb, 'modules', moduleId));
+    return { success: true };
+  } catch (err) {
+    console.error('deleteModuleFromFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// ----------------------------------------------------
 // TICKETS (DEFECTS) COLLECTION
 // ----------------------------------------------------
 
@@ -457,7 +526,7 @@ export async function saveTestSuiteToFirestore(suite) {
 // BULK DATA SYNC
 // ----------------------------------------------------
 
-export async function seedAllDataToFirestore({ users = [], features = [], tickets = [], projects = [], releases = [], testSuites = [] }) {
+export async function seedAllDataToFirestore({ users = [], features = [], tickets = [], projects = [], releases = [], testSuites = [], modules = [] }) {
   if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
 
   try {
@@ -466,6 +535,9 @@ export async function seedAllDataToFirestore({ users = [], features = [], ticket
     }
     for (const p of projects) {
       await setDoc(doc(firestoreDb, 'projects', p.id), cleanForFirestore(p), { merge: true });
+    }
+    for (const m of modules) {
+      await setDoc(doc(firestoreDb, 'modules', m.id), cleanForFirestore(m), { merge: true });
     }
     for (const f of features) {
       await setDoc(doc(firestoreDb, 'features', f.id), cleanForFirestore(f), { merge: true });

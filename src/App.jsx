@@ -9,6 +9,7 @@ import TicketDetailModal from './components/TicketDetailModal';
 import CreateTicketModal from './components/CreateTicketModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import CreateFeatureModal from './components/CreateFeatureModal';
+import CreateModuleModal from './components/CreateModuleModal';
 import UserManagementModal from './components/UserManagementModal';
 import NotificationToast from './components/NotificationToast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -31,7 +32,7 @@ function MainApp() {
     <div className="app-container">
       <Header />
 
-      <main className="main-content" style={{ padding: '1.5rem 2rem 3rem' }}>
+      <main className="main-content">
         {activeTab === 'features' && <FeatureBoard />}
         {activeTab === 'board' && <DefectsListView />}
         {activeTab === 'release' && <ReleaseGate />}
@@ -43,6 +44,7 @@ function MainApp() {
       <CreateTicketModal />
       <CreateProjectModal />
       <CreateFeatureModal />
+      <CreateModuleModal />
       <UserManagementModal />
       <NotificationToast />
     </div>

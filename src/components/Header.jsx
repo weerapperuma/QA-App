@@ -74,7 +74,7 @@ export default function Header() {
   return (
     <header className="top-header">
       {/* Left: Brand & Project Selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <div className="header-left">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <div className="brand-logo-icon" style={{ width: '32px', height: '32px' }}>
             <Layers size={18} />
@@ -94,8 +94,8 @@ export default function Header() {
             onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
             title="Click to switch project"
           >
-            <Building2 size={15} color="var(--accent-dev)" />
-            <span>{activeProject?.name || 'Select Project'}</span>
+            <Building2 size={15} color="var(--accent-dev)" style={{ flexShrink: 0 }} />
+            <span className="project-name-text">{activeProject?.name || 'Select Project'}</span>
             <span
               style={{
                 fontSize: '0.68rem',
@@ -192,7 +192,7 @@ export default function Header() {
       </div>
 
       {/* Center: Clean 3-View Switcher */}
-      <div className="nav-tabs" style={{ background: 'var(--bg-surface)', padding: '3px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-subtle)' }}>
+      <div className="nav-tabs header-center" style={{ background: 'var(--bg-surface)', padding: '3px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-subtle)' }}>
         <button
           className={`persona-btn ${activeTab === 'features' ? 'active-all' : ''}`}
           onClick={() => setActiveTab('features')}
@@ -228,76 +228,81 @@ export default function Header() {
       </div>
 
       {/* Right: New Feature, Persona Toggle, Theme, and User Profile with Logout */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-        {/* Simple Role Toggle */}
-        <div className="persona-switcher" style={{ padding: '2px' }}>
-          <button
-            className={`persona-btn ${role === 'developer' ? 'active-dev' : ''}`}
-            onClick={() => setRole(role === 'developer' ? 'all' : 'developer')}
-            style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
-            title="Toggle Developer view filter"
-          >
-            <Code2 size={13} />
-            <span>Dev</span>
-          </button>
+      <div className="header-right">
+        {/* Actions Group (Dev/QA Switcher, Manage Users, New Feature) */}
+        <div className="header-action-group">
+          {/* Simple Role Toggle */}
+          <div className="persona-switcher" style={{ padding: '2px' }}>
+            <button
+              className={`persona-btn ${role === 'developer' ? 'active-dev' : ''}`}
+              onClick={() => setRole(role === 'developer' ? 'all' : 'developer')}
+              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
+              title="Toggle Developer view filter"
+            >
+              <Code2 size={13} />
+              <span>Dev</span>
+            </button>
 
+            <button
+              className={`persona-btn ${role === 'qa' ? 'active-qa' : ''}`}
+              onClick={() => setRole(role === 'qa' ? 'all' : 'qa')}
+              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
+              title="Toggle QA view filter"
+            >
+              <CheckCircle2 size={13} />
+              <span>QA</span>
+            </button>
+          </div>
+
+          {/* Super Admin: User Management Quick Button */}
+          {currentUser?.role === 'admin' && (
+            <button
+              className="btn btn-admin-manage"
+              onClick={() => setIsUserManagementModalOpen(true)}
+              style={{
+                fontSize: '0.82rem',
+                padding: '0.45rem 0.85rem',
+                background: 'rgba(139, 92, 246, 0.15)',
+                color: '#c084fc',
+                border: '1px solid rgba(139, 92, 246, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Super Admin: Manage team accounts & role assignments"
+            >
+              <ShieldCheck size={15} color="#c084fc" />
+              <span>Manage Users</span>
+            </button>
+          )}
+
+          {/* Primary Action Button */}
           <button
-            className={`persona-btn ${role === 'qa' ? 'active-qa' : ''}`}
-            onClick={() => setRole(role === 'qa' ? 'all' : 'qa')}
-            style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
-            title="Toggle QA view filter"
+            className="btn btn-primary"
+            onClick={() => setIsCreateFeatureModalOpen(true)}
+            style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
           >
-            <CheckCircle2 size={13} />
-            <span>QA</span>
+            <Plus size={14} />
+            <span>New Feature</span>
           </button>
         </div>
 
-        {/* Super Admin: User Management Quick Button */}
-        {currentUser?.role === 'admin' && (
+        {/* User Controls (Theme Toggle & Account Menu) */}
+        <div className="header-user-controls">
+          {/* Theme Toggle */}
           <button
-            className="btn"
-            onClick={() => setIsUserManagementModalOpen(true)}
-            style={{
-              fontSize: '0.82rem',
-              padding: '0.45rem 0.85rem',
-              background: 'rgba(139, 92, 246, 0.15)',
-              color: '#c084fc',
-              border: '1px solid rgba(139, 92, 246, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease'
-            }}
-            title="Super Admin: Manage team accounts & role assignments"
+            className="btn-icon"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+            style={{ width: '32px', height: '32px' }}
           >
-            <ShieldCheck size={15} color="#c084fc" />
-            <span>Manage Users</span>
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
-        )}
 
-        {/* Primary Action Button */}
-        <button
-          className="btn btn-primary"
-          onClick={() => setIsCreateFeatureModalOpen(true)}
-          style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
-        >
-          <Plus size={14} />
-          <span>New Feature</span>
-        </button>
-
-        {/* Theme Toggle */}
-        <button
-          className="btn-icon"
-          onClick={toggleTheme}
-          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
-          style={{ width: '32px', height: '32px' }}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
-
-        <div style={{ width: '1px', height: '22px', background: 'var(--border-subtle)', margin: '0 2px' }} />
+          <div className="header-divider" style={{ width: '1px', height: '22px', background: 'var(--border-subtle)', margin: '0 2px' }} />
 
         {/* User Profile Pill & Logout Menu */}
         <div style={{ position: 'relative' }} ref={userMenuRef}>
@@ -542,6 +547,7 @@ export default function Header() {
               </button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </header>
