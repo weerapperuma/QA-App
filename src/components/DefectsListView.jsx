@@ -4,17 +4,14 @@ import {
   Bug,
   Lightbulb,
   Search,
-  Filter,
   CheckCircle2,
-  Clock,
-  ArrowRight,
   Plus,
-  ExternalLink,
   Layers,
   X,
   Check,
-  ChevronRight,
-  Trash2
+  Trash2,
+  Edit2,
+  Code2
 } from 'lucide-react';
 
 export default function DefectsListView() {
@@ -24,19 +21,19 @@ export default function DefectsListView() {
     activeProject,
     openFeature,
     updateFeatureBugStatus,
+    updateFeatureBug,
     updateSuggestionStatus,
+    updateFeatureSuggestion,
     addBugToFeature,
     addSuggestionToFeature,
     deleteBugFromFeature,
-    deleteSuggestionFromFeature,
-    team
+    deleteSuggestionFromFeature
   } = useApp();
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'bug' | 'suggestion'
   const [featureFilter, setFeatureFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [severityFilter, setSeverityFilter] = useState('all');
 
   // Quick Add Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -48,26 +45,55 @@ export default function DefectsListView() {
   const [reproSteps, setReproSteps] = useState('');
   const [notes, setNotes] = useState('');
 
+  // Dev Fixed Note Modal state
+  const [isDevFixedModalOpen, setIsDevFixedModalOpen] = useState(false);
+  const [devFixedTarget, setDevFixedTarget] = useState(null);
+  const [devNoteText, setDevNoteText] = useState('');
+
+  // Edit Modal state
+  const [editItem, setEditItem] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSeverity, setEditSeverity] = useState('Medium');
+  const [editReproSteps, setEditReproSteps] = useState('');
+  const [editDevNote, setEditDevNote] = useState('');
+  const [editStatus, setEditStatus] = useState('open');
+
   // Selected item modal for inspecting details
   const [viewItem, setViewItem] = useState(null);
+
+  const getSeverityColor = (sev) => {
+    switch ((sev || '').toLowerCase()) {
+      case 'critical':
+        return 'var(--status-critical)';
+      case 'high':
+        return '#f97316';
+      case 'medium':
+        return '#eab308';
+      case 'low':
+        return '#38bdf8';
+      default:
+        return 'var(--text-secondary)';
+    }
+  };
 
   // Filtered defects
   const filteredItems = allFeatureDefects.filter((item) => {
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchTitle = (item.title || '').toLowerCase().includes(q);
-      const matchId = (item.id || '').toLowerCase().includes(q);
       const matchFeat = (item.featureName || '').toLowerCase().includes(q);
-      if (!matchTitle && !matchId && !matchFeat) return false;
+      const matchDevNote = (item.devNote || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchFeat && !matchDevNote) return false;
     }
     if (typeFilter !== 'all' && item.type !== typeFilter) return false;
     if (featureFilter !== 'all' && item.featureId !== featureFilter) return false;
     if (statusFilter !== 'all') {
-      if (statusFilter === 'open' && (item.status === 'verified' || item.status === 'implemented')) return false;
-      if (statusFilter === 'verified' && item.status !== 'verified' && item.status !== 'implemented') return false;
-      if (statusFilter === 'ready_for_qa' && item.status !== 'ready_for_qa') return false;
+      const s = item.status || 'open';
+      if (statusFilter === 'open' && s !== 'open' && s !== 'new') return false;
+      if (statusFilter === 'in_dev' && s !== 'in_dev') return false;
+      if (statusFilter === 'ready_for_qa' && s !== 'ready_for_qa') return false;
+      if (statusFilter === 'verified' && s !== 'verified' && s !== 'implemented') return false;
     }
-    if (severityFilter !== 'all' && item.severity !== severityFilter) return false;
     return true;
   });
 
@@ -75,21 +101,22 @@ export default function DefectsListView() {
   const totalSuggs = allFeatureDefects.filter((d) => d.type === 'suggestion').length;
   const openCount = allFeatureDefects.filter((d) => d.status !== 'verified' && d.status !== 'implemented').length;
 
+  // Add Item
   const handleAddItem = (e) => {
     e.preventDefault();
     if (!title.trim() || !targetFeatureId) return;
 
     if (itemType === 'bug') {
       addBugToFeature(targetFeatureId, {
-        title,
+        title: title.trim(),
         severity,
-        reproSteps
+        reproSteps: reproSteps.trim()
       });
     } else {
       addSuggestionToFeature(targetFeatureId, {
-        title,
+        title: title.trim(),
         priority,
-        notes
+        notes: notes.trim()
       });
     }
 
@@ -97,6 +124,161 @@ export default function DefectsListView() {
     setReproSteps('');
     setNotes('');
     setIsAddModalOpen(false);
+  };
+
+  // Workflow Action Handlers
+  const handleMoveToInDev = (item) => {
+    if (item.type === 'suggestion') {
+      updateSuggestionStatus(item.featureId, item.id, 'in_dev');
+    } else {
+      updateFeatureBugStatus(item.featureId, item.id, 'in_dev');
+    }
+  };
+
+  const openDevFixedModal = (item) => {
+    setDevFixedTarget(item);
+    setDevNoteText(item.devNote || '');
+    setIsDevFixedModalOpen(true);
+  };
+
+  const handleConfirmDevFixed = (e) => {
+    e.preventDefault();
+    if (!devFixedTarget) return;
+
+    const extra = { devNote: devNoteText.trim() };
+    if (devFixedTarget.type === 'suggestion') {
+      updateSuggestionStatus(devFixedTarget.featureId, devFixedTarget.id, 'ready_for_qa', extra);
+    } else {
+      updateFeatureBugStatus(devFixedTarget.featureId, devFixedTarget.id, 'ready_for_qa', extra);
+    }
+
+    setIsDevFixedModalOpen(false);
+    setDevFixedTarget(null);
+    setDevNoteText('');
+  };
+
+  const handleQAPass = (item) => {
+    if (item.type === 'suggestion') {
+      updateSuggestionStatus(item.featureId, item.id, 'verified');
+    } else {
+      updateFeatureBugStatus(item.featureId, item.id, 'verified');
+    }
+  };
+
+  const handleReopen = (item) => {
+    if (window.confirm(`Reopen this ${item.type === 'bug' ? 'defect' : 'suggestion'}?`)) {
+      if (item.type === 'suggestion') {
+        updateSuggestionStatus(item.featureId, item.id, 'open');
+      } else {
+        updateFeatureBugStatus(item.featureId, item.id, 'open');
+      }
+    }
+  };
+
+  // Edit Handlers
+  const openEditModal = (item) => {
+    setEditItem(item);
+    setEditTitle(item.title || '');
+    setEditSeverity(item.severity || item.priority || 'Medium');
+    setEditReproSteps(item.reproSteps || item.notes || '');
+    setEditDevNote(item.devNote || '');
+    setEditStatus(item.status || 'open');
+  };
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    if (!editItem || !editTitle.trim()) return;
+
+    if (editItem.type === 'suggestion') {
+      updateFeatureSuggestion(editItem.featureId, editItem.id, {
+        title: editTitle.trim(),
+        priority: editSeverity,
+        notes: editReproSteps.trim(),
+        devNote: editDevNote.trim(),
+        status: editStatus
+      });
+    } else {
+      updateFeatureBug(editItem.featureId, editItem.id, {
+        title: editTitle.trim(),
+        severity: editSeverity,
+        reproSteps: editReproSteps.trim(),
+        devNote: editDevNote.trim(),
+        status: editStatus
+      });
+    }
+
+    setEditItem(null);
+  };
+
+  // Delete Handler
+  const handleDelete = (item) => {
+    if (window.confirm(`Delete ${item.type === 'bug' ? 'defect' : 'suggestion'} "${item.title}"?`)) {
+      if (item.type === 'suggestion') {
+        deleteSuggestionFromFeature(item.featureId, item.id);
+      } else {
+        deleteBugFromFeature(item.featureId, item.id);
+      }
+    }
+  };
+
+  // Status Lifecycle Action Button
+  const renderStatusButton = (item) => {
+    const status = item.status || 'open';
+
+    if (status === 'open' || status === 'new') {
+      return (
+        <button
+          type="button"
+          className="status-flow-btn in-dev-action"
+          onClick={() => handleMoveToInDev(item)}
+          title="Developer: Click to move to In Development"
+        >
+          <Code2 size={12} />
+          <span>In Dev</span>
+        </button>
+      );
+    }
+
+    if (status === 'in_dev') {
+      return (
+        <button
+          type="button"
+          className="status-flow-btn dev-fixed-action"
+          onClick={() => openDevFixedModal(item)}
+          title="Developer: Click to add resolution note and mark as Dev Fixed"
+        >
+          <Check size={12} />
+          <span>Dev Fixed</span>
+        </button>
+      );
+    }
+
+    if (status === 'ready_for_qa') {
+      return (
+        <button
+          type="button"
+          className="status-flow-btn qa-passed-action"
+          onClick={() => handleQAPass(item)}
+          title="QA: Click to verify fix and pass"
+        >
+          <CheckCircle2 size={12} />
+          <span>QA Passed</span>
+        </button>
+      );
+    }
+
+    // Verified / Implemented / Closed
+    return (
+      <button
+        type="button"
+        className="status-flow-btn closed-action"
+        onClick={() => handleReopen(item)}
+        title="Verified & Closed. Click to reopen if needed"
+      >
+        <CheckCircle2 size={12} />
+        <span>Passed</span>
+      </button>
+    );
   };
 
   return (
@@ -213,14 +395,15 @@ export default function DefectsListView() {
             style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
           >
             <option value="all">All Statuses</option>
-            <option value="open">Open / In Dev</option>
-            <option value="ready_for_qa">Ready for Retest</option>
-            <option value="verified">Verified & Closed</option>
+            <option value="open">Needs Dev (In Dev)</option>
+            <option value="in_dev">In Development</option>
+            <option value="ready_for_qa">Dev Fixed (Ready for QA)</option>
+            <option value="verified">QA Passed (Closed)</option>
           </select>
         </div>
       </div>
 
-      {/* Dense High-Capacity Table View */}
+      {/* Simplified High-Capacity Table View */}
       {filteredItems.length === 0 ? (
         <div
           style={{
@@ -242,24 +425,17 @@ export default function DefectsListView() {
           <table className="tickets-table">
             <thead>
               <tr>
-                <th style={{ width: '130px' }}>Type & Severity</th>
-                <th style={{ width: '110px' }}>ID</th>
                 <th>Summary</th>
-                <th style={{ width: '220px' }}>Linked Feature</th>
-                <th style={{ width: '120px' }}>Assignees</th>
-                <th style={{ width: '140px' }}>Status</th>
-                <th style={{ width: '140px', textAlign: 'right' }}>Workflow Action</th>
+                <th style={{ width: '70px', textAlign: 'center' }}>Type</th>
+                <th style={{ width: '200px' }}>Linked Feature</th>
+                <th style={{ width: '150px', textAlign: 'center' }}>Status</th>
+                <th style={{ width: '90px', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.map((item) => {
                 const isBug = item.type === 'bug';
-                const isVerified = item.status === 'verified' || item.status === 'implemented';
-                const isReadyRetest = item.status === 'ready_for_qa';
-                const isCritical = item.severity === 'Critical';
-
-                const dev = team.find((m) => m.id === item.assignedDev);
-                const qa = team.find((m) => m.id === item.assignedQa);
+                const sevColor = getSeverityColor(item.severity);
 
                 return (
                   <tr
@@ -267,54 +443,53 @@ export default function DefectsListView() {
                     onClick={() => setViewItem(item)}
                     style={{ cursor: 'pointer' }}
                   >
-                    {/* Type & Severity Badge */}
-                    <td>
-                      {isBug ? (
-                        <span
-                          className="tag-pill"
-                          style={{
-                            fontSize: '0.7rem',
-                            padding: '2px 7px',
-                            background: isCritical ? 'var(--status-critical-bg)' : 'var(--bg-surface)',
-                            color: isCritical ? 'var(--status-critical)' : 'var(--text-primary)',
-                            border: `1px solid ${isCritical ? 'var(--status-critical-border)' : 'var(--border-subtle)'}`
-                          }}
-                        >
-                          <Bug size={11} />
-                          {item.severity}
-                        </span>
-                      ) : (
-                        <span
-                          className="tag-pill"
-                          style={{
-                            fontSize: '0.7rem',
-                            padding: '2px 7px',
-                            background: 'rgba(234, 179, 8, 0.12)',
-                            color: '#eab308',
-                            border: '1px solid rgba(234, 179, 8, 0.3)'
-                          }}
-                        >
-                          <Lightbulb size={11} />
-                          Suggestion
-                        </span>
-                      )}
-                    </td>
-
-                    {/* ID */}
-                    <td>
-                      <span className="ticket-id" style={{ fontSize: '0.76rem' }}>
-                        {item.id}
-                      </span>
-                    </td>
-
-                    {/* Title */}
+                    {/* Summary */}
                     <td>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.86rem' }}>
                         {item.title}
                       </div>
+                      {item.devNote && (
+                        <div className="summary-dev-note">
+                          <span className="summary-dev-badge">Dev Note</span>
+                          <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                            "{item.devNote}"
+                          </span>
+                        </div>
+                      )}
                     </td>
 
-                    {/* Linked Feature Pill */}
+                    {/* Type & Severity Icon */}
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        {isBug ? (
+                          <div
+                            className="type-icon-box"
+                            style={{
+                              background: item.severity === 'Critical' ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-surface)',
+                              border: `1px solid ${sevColor}`,
+                              color: sevColor
+                            }}
+                            title={`Defect (${item.severity || 'Medium'})`}
+                          >
+                            <Bug size={14} />
+                          </div>
+                        ) : (
+                          <div
+                            className="type-icon-box"
+                            style={{
+                              background: 'rgba(234, 179, 8, 0.12)',
+                              border: '1px solid rgba(234, 179, 8, 0.4)',
+                              color: '#eab308'
+                            }}
+                            title={`Suggestion (${item.priority || 'Medium'})`}
+                          >
+                            <Lightbulb size={14} />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Linked Feature */}
                     <td>
                       <span
                         className="tag-pill"
@@ -333,104 +508,50 @@ export default function DefectsListView() {
                         title={`Click to open feature ${item.featureName}`}
                       >
                         <Layers size={11} />
-                        {item.featureName}
+                        <span>{item.featureName}</span>
                       </span>
                     </td>
 
-                    {/* Assignees */}
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        {dev && (
-                          <div
-                            className="user-avatar-small"
-                            style={{ background: dev.color, width: '20px', height: '20px', fontSize: '0.62rem' }}
-                            title={`Dev: ${dev.name}`}
-                          >
-                            {dev.initials}
-                          </div>
-                        )}
-                        {qa && (
-                          <div
-                            className="user-avatar-small"
-                            style={{ background: qa.color, width: '20px', height: '20px', fontSize: '0.62rem' }}
-                            title={`QA: ${qa.name}`}
-                          >
-                            {qa.initials}
-                          </div>
-                        )}
+                    {/* Status Lifecycle Button */}
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        {renderStatusButton(item)}
                       </div>
                     </td>
 
-                    {/* Status Pill */}
-                    <td>
-                      {isVerified ? (
-                        <span className="tag-pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontSize: '0.72rem' }}>
-                          Verified ✅
-                        </span>
-                      ) : isReadyRetest ? (
-                        <span className="tag-pill" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', fontSize: '0.72rem' }}>
-                          Ready for Retest
-                        </span>
-                      ) : (
-                        <span className="tag-pill" style={{ background: 'var(--status-critical-bg)', color: 'var(--status-critical)', fontSize: '0.72rem' }}>
-                          Open / In Dev
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Quick Row Action */}
+                    {/* Actions: Edit & Delete Icons */}
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem' }} onClick={(e) => e.stopPropagation()}>
-                        {item.status === 'open' || item.status === 'in_dev' ? (
-                          <button
-                            className="quick-advance-btn"
-                            onClick={() => updateFeatureBugStatus(item.featureId, item.id, 'ready_for_qa')}
-                            title="Developer marks fixed on staging"
-                          >
-                            <span>Dev Fixed ➔</span>
-                          </button>
-                        ) : null}
-
-                        {item.status === 'ready_for_qa' ? (
-                          <button
-                            className="quick-advance-btn"
-                            style={{ background: 'var(--accent-qa-subtle)', color: 'var(--accent-qa)', borderColor: 'var(--accent-qa-border)' }}
-                            onClick={() => updateFeatureBugStatus(item.featureId, item.id, 'verified')}
-                            title="QA confirms resolved"
-                          >
-                            <Check size={11} />
-                            <span>QA Pass</span>
-                          </button>
-                        ) : null}
-
-                        {isVerified && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--accent-qa)', fontWeight: 600 }}>
-                            Closed
-                          </span>
-                        )}
-
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.35rem' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button
                           type="button"
                           className="btn-icon"
                           style={{
-                            padding: '3px',
-                            width: '24px',
-                            height: '24px',
+                            width: '26px',
+                            height: '26px',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-subtle)',
+                            background: 'var(--bg-surface)'
+                          }}
+                          onClick={() => openEditModal(item)}
+                          title="Edit"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            width: '26px',
+                            height: '26px',
                             color: 'var(--status-critical)',
                             border: '1px solid var(--status-critical-border)',
                             background: 'var(--status-critical-bg)'
                           }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Delete ${item.type === 'bug' ? 'defect' : 'suggestion'} [${item.id}] "${item.title}"?`)) {
-                              if (item.type === 'suggestion') {
-                                deleteSuggestionFromFeature(item.featureId, item.id);
-                              } else {
-                                deleteBugFromFeature(item.featureId, item.id);
-                              }
-                            }
-                          }}
-                          title={`Delete ${item.type === 'bug' ? 'Defect' : 'Suggestion'}`}
+                          onClick={() => handleDelete(item)}
+                          title="Delete"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -444,7 +565,188 @@ export default function DefectsListView() {
         </div>
       )}
 
-      {/* Quick Add Modal (Linked to Feature) */}
+      {/* Dev Fixed Note Modal */}
+      {isDevFixedModalOpen && devFixedTarget && (
+        <div className="modal-overlay" onClick={() => setIsDevFixedModalOpen(false)}>
+          <div className="modal-container" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <span style={{ fontWeight: 800, fontSize: '1.05rem', display: 'block' }}>
+                  Mark as Dev Fixed
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Handover to QA for verification
+                </span>
+              </div>
+              <button className="btn-icon" onClick={() => setIsDevFixedModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmDevFixed}>
+              <div className="modal-body single-col">
+                <div style={{ padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                    Target {devFixedTarget.type === 'bug' ? 'Defect' : 'Suggestion'}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {devFixedTarget.title}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Developer Resolution Note (What was done?)
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="e.g. Fixed null check on Safari, updated input validation pattern, and tested locally on staging..."
+                    value={devNoteText}
+                    onChange={(e) => setDevNoteText(e.target.value)}
+                    style={{ minHeight: '90px' }}
+                    autoFocus
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    This note will be shown directly to QA during retest verification.
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '1rem 1.5rem',
+                  borderTop: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.5rem'
+                }}
+              >
+                <button type="button" className="btn btn-secondary" onClick={() => setIsDevFixedModalOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+                    borderColor: 'rgba(139, 92, 246, 0.4)'
+                  }}
+                >
+                  <Check size={14} />
+                  <span>Confirm Dev Fixed</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Defect / Suggestion Modal */}
+      {editItem && (
+        <div className="modal-overlay" onClick={() => setEditItem(null)}>
+          <div className="modal-container" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>
+                Edit {editItem.type === 'bug' ? 'Defect' : 'Suggestion'}
+              </span>
+              <button className="btn-icon" onClick={() => setEditItem(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit}>
+              <div className="modal-body single-col">
+                <div className="form-group">
+                  <label className="form-label">Summary / Title *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="responsive-form-grid-2">
+                  <div className="form-group">
+                    <label className="form-label">
+                      {editItem.type === 'bug' ? 'Severity' : 'Priority'}
+                    </label>
+                    <select
+                      className="form-select"
+                      value={editSeverity}
+                      onChange={(e) => setEditSeverity(e.target.value)}
+                    >
+                      <option value="Critical">🔴 Critical (Blocker)</option>
+                      <option value="High">🟠 High</option>
+                      <option value="Medium">🟡 Medium</option>
+                      <option value="Low">🔵 Low</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select
+                      className="form-select"
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                    >
+                      <option value="open">Needs Dev (In Dev)</option>
+                      <option value="in_dev">In Development</option>
+                      <option value="ready_for_qa">Dev Fixed (Ready for QA)</option>
+                      <option value="verified">QA Passed (Closed)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    {editItem.type === 'bug' ? 'Steps to Reproduce' : 'Suggestion Details'}
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    value={editReproSteps}
+                    onChange={(e) => setEditReproSteps(e.target.value)}
+                    style={{ minHeight: '75px' }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Developer Resolution Note</label>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Details of fix applied..."
+                    value={editDevNote}
+                    onChange={(e) => setEditDevNote(e.target.value)}
+                    style={{ minHeight: '65px' }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '1rem 1.5rem',
+                  borderTop: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.5rem'
+                }}
+              >
+                <button type="button" className="btn btn-secondary" onClick={() => setEditItem(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Modal */}
       {isAddModalOpen && (
         <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
           <div className="modal-container" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
@@ -596,9 +898,11 @@ export default function DefectsListView() {
           <div className="modal-container" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <span className="ticket-id">{viewItem.id}</span>
                 <span className="tag-pill" style={{ background: 'var(--bg-surface)' }}>
                   📁 {viewItem.featureName}
+                </span>
+                <span className="tag-pill" style={{ background: 'var(--bg-secondary)' }}>
+                  {viewItem.type.toUpperCase()}
                 </span>
               </div>
               <button className="btn-icon" onClick={() => setViewItem(null)}>
@@ -611,15 +915,12 @@ export default function DefectsListView() {
                 {viewItem.title}
               </h2>
 
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                <span className="tag-pill" style={{ background: 'var(--bg-secondary)' }}>
-                  Type: {viewItem.type.toUpperCase()}
-                </span>
-                <span className="tag-pill" style={{ background: 'var(--bg-secondary)' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                <span className="tag-pill" style={{ background: 'var(--bg-secondary)', color: getSeverityColor(viewItem.severity) }}>
                   Severity: {viewItem.severity}
                 </span>
                 <span className="tag-pill" style={{ background: 'var(--bg-secondary)' }}>
-                  Status: {viewItem.status}
+                  Status: {viewItem.status || 'open'}
                 </span>
               </div>
 
@@ -645,33 +946,33 @@ export default function DefectsListView() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '0.65rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
-                {viewItem.status !== 'ready_for_qa' && viewItem.status !== 'verified' && (
-                  <button
-                    className="btn btn-primary"
-                    style={{ flex: 1, fontSize: '0.82rem' }}
-                    onClick={() => {
-                      updateFeatureBugStatus(viewItem.featureId, viewItem.id, 'ready_for_qa');
-                      setViewItem(null);
-                    }}
-                  >
-                    <span>Mark Fixed (Ready for Retest)</span>
-                  </button>
-                )}
+              {viewItem.devNote && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(139, 92, 246, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                  <strong style={{ fontSize: '0.8rem', color: '#c084fc', display: 'block', marginBottom: '4px' }}>
+                    Developer Resolution Note:
+                  </strong>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-primary)', margin: 0 }}>
+                    {viewItem.devNote}
+                  </p>
+                </div>
+              )}
 
-                {viewItem.status !== 'verified' && (
-                  <button
-                    className="btn btn-qa"
-                    style={{ flex: 1, fontSize: '0.82rem' }}
-                    onClick={() => {
-                      updateFeatureBugStatus(viewItem.featureId, viewItem.id, 'verified');
-                      setViewItem(null);
-                    }}
-                  >
-                    <CheckCircle2 size={14} />
-                    <span>QA Pass & Close</span>
-                  </button>
-                )}
+              <div style={{ display: 'flex', gap: '0.65rem', marginTop: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {renderStatusButton(viewItem)}
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.82rem' }}
+                  onClick={() => {
+                    const item = viewItem;
+                    setViewItem(null);
+                    openEditModal(item);
+                  }}
+                >
+                  <Edit2 size={13} />
+                  <span>Edit</span>
+                </button>
 
                 <button
                   type="button"
@@ -687,16 +988,10 @@ export default function DefectsListView() {
                     cursor: 'pointer'
                   }}
                   onClick={() => {
-                    if (window.confirm(`Delete ${viewItem.type === 'bug' ? 'defect' : 'suggestion'} [${viewItem.id}] "${viewItem.title}"?`)) {
-                      if (viewItem.type === 'suggestion') {
-                        deleteSuggestionFromFeature(viewItem.featureId, viewItem.id);
-                      } else {
-                        deleteBugFromFeature(viewItem.featureId, viewItem.id);
-                      }
-                      setViewItem(null);
-                    }
+                    handleDelete(viewItem);
+                    setViewItem(null);
                   }}
-                  title={`Delete ${viewItem.type === 'bug' ? 'Defect' : 'Suggestion'}`}
+                  title="Delete"
                 >
                   <Trash2 size={14} />
                   <span>Delete</span>

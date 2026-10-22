@@ -1447,6 +1447,106 @@ body {
   background: var(--bg-card-hover);
 }
 
+/* Status Lifecycle Buttons for Defects & Suggestions */
+.status-flow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  font-family: inherit;
+  border: 1px solid transparent;
+}
+
+.status-flow-btn.in-dev-action {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-dev);
+  border-color: var(--accent-dev-border);
+}
+
+.status-flow-btn.in-dev-action:hover {
+  background: rgba(56, 189, 248, 0.24);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.25);
+}
+
+.status-flow-btn.dev-fixed-action {
+  background: rgba(139, 92, 246, 0.14);
+  color: #c084fc;
+  border-color: rgba(139, 92, 246, 0.38);
+}
+
+.status-flow-btn.dev-fixed-action:hover {
+  background: rgba(139, 92, 246, 0.26);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.25);
+}
+
+.status-flow-btn.qa-passed-action {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-qa);
+  border-color: var(--accent-qa-border);
+}
+
+.status-flow-btn.qa-passed-action:hover {
+  background: rgba(16, 185, 129, 0.28);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
+}
+
+.status-flow-btn.closed-action {
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.status-flow-btn.closed-action:hover {
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--status-critical);
+  border-color: var(--status-critical-border);
+}
+
+.type-icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  transition: transform 0.15s ease;
+}
+
+.type-icon-box:hover {
+  transform: scale(1.12);
+}
+
+.summary-dev-note {
+  margin-top: 5px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.summary-dev-badge {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
 /* Responsive Grid Utilities & Helper Classes */
 .responsive-form-grid-2 {
   display: grid;

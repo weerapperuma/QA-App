@@ -569,6 +569,11 @@ export default function FeatureDetailModal() {
                             <strong>Repro: </strong> {bug.reproSteps}
                           </div>
                         )}
+                        {bug.devNote && (
+                          <div style={{ fontSize: '0.78rem', color: '#c084fc', marginTop: '2px' }}>
+                            <strong>Dev Note: </strong> {bug.devNote}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -718,6 +723,11 @@ export default function FeatureDetailModal() {
                         <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{sugg.title}</div>
                         {sugg.notes && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sugg.notes}</div>
+                        )}
+                        {sugg.devNote && (
+                          <div style={{ fontSize: '0.75rem', color: '#c084fc', marginTop: '2px' }}>
+                            <strong>Dev Note: </strong> {sugg.devNote}
+                          </div>
                         )}
                       </div>
 

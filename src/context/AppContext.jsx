@@ -1002,8 +1002,8 @@ export function AppProvider({ children }) {
     );
   };
 
-  // Update Feature Bug Status (Open -> In Dev -> Ready for Retest -> Verified)
-  const updateFeatureBugStatus = async (featureId, bugId, newStatus) => {
+  // Update Feature Bug Status (Open -> In Dev -> Ready for Retest (Dev Fixed) -> Verified (QA Passed))
+  const updateFeatureBugStatus = async (featureId, bugId, newStatus, extraData = {}) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
 
@@ -1013,13 +1013,15 @@ export function AppProvider({ children }) {
         spread: 60,
         origin: { y: 0.7 }
       });
-      addToast(`Defect [${bugId}] verified and closed! 🎉`, 'verified');
+      addToast(`Defect [${bugId}] verified & passed by QA! 🎉`, 'verified');
     } else if (newStatus === 'ready_for_qa') {
-      addToast(`Defect [${bugId}] fixed by Developer. Ready for QA retest!`, 'success');
+      addToast(`Defect [${bugId}] marked Dev Fixed with resolution note. Handed over to QA!`, 'success');
+    } else if (newStatus === 'in_dev') {
+      addToast(`Defect [${bugId}] moved to In Development.`, 'info');
     }
 
     const updatedBugs = (feat.bugs || []).map((b) =>
-      b.id === bugId ? { ...b, status: newStatus } : b
+      b.id === bugId ? { ...b, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : b
     );
     const updatedFeature = {
       ...feat,
@@ -1034,6 +1036,31 @@ export function AppProvider({ children }) {
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(updatedFeature);
     }
+  };
+
+  // Edit / Update Bug Details
+  const updateFeatureBug = async (featureId, bugId, bugData) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const updatedBugs = (feat.bugs || []).map((b) =>
+      b.id === bugId ? { ...b, ...bugData, updatedAt: new Date().toISOString() } : b
+    );
+    const updatedFeature = {
+      ...feat,
+      bugs: updatedBugs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Defect updated successfully.`, 'success');
   };
 
   // Delete Bug from Feature
@@ -1097,12 +1124,25 @@ export function AppProvider({ children }) {
     );
   };
 
-  const updateSuggestionStatus = async (featureId, suggId, newStatus) => {
+  const updateSuggestionStatus = async (featureId, suggId, newStatus, extraData = {}) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
 
+    if (newStatus === 'verified' || newStatus === 'implemented') {
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.7 }
+      });
+      addToast(`Suggestion [${suggId}] verified and closed! 🎉`, 'verified');
+    } else if (newStatus === 'ready_for_qa') {
+      addToast(`Suggestion [${suggId}] marked Dev Implemented with resolution note. Ready for QA retest!`, 'success');
+    } else if (newStatus === 'in_dev') {
+      addToast(`Suggestion [${suggId}] moved to In Development.`, 'info');
+    }
+
     const updatedSuggs = (feat.suggestions || []).map((s) =>
-      s.id === suggId ? { ...s, status: newStatus } : s
+      s.id === suggId ? { ...s, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : s
     );
     const updatedFeature = {
       ...feat,
@@ -1117,6 +1157,31 @@ export function AppProvider({ children }) {
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(updatedFeature);
     }
+  };
+
+  // Edit / Update Suggestion Details
+  const updateFeatureSuggestion = async (featureId, suggId, suggData) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const updatedSuggs = (feat.suggestions || []).map((s) =>
+      s.id === suggId ? { ...s, ...suggData, updatedAt: new Date().toISOString() } : s
+    );
+    const updatedFeature = {
+      ...feat,
+      suggestions: updatedSuggs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Suggestion updated successfully.`, 'success');
   };
 
   // Delete Suggestion from Feature
@@ -1561,9 +1626,11 @@ export function AppProvider({ children }) {
         moveFeatureCard,
         addBugToFeature,
         updateFeatureBugStatus,
+        updateFeatureBug,
         deleteBugFromFeature,
         addSuggestionToFeature,
         updateSuggestionStatus,
+        updateFeatureSuggestion,
         deleteSuggestionFromFeature,
         updateFeatureModule,
         modules,
