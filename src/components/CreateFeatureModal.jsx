@@ -144,14 +144,24 @@ export default function CreateFeatureModal() {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflow: 'hidden'
+          }}
+        >
           <div
             className="modal-body"
             style={{
               display: 'flex',
               flexDirection: 'column',
               gap: '1.15rem',
-              maxHeight: '75vh',
+              flex: '1 1 auto',
+              minHeight: 0,
               overflowY: 'auto',
               padding: '1.25rem'
             }}
@@ -340,9 +350,12 @@ export default function CreateFeatureModal() {
           <div
             className="modal-footer"
             style={{
+              flexShrink: 0,
               padding: '0.85rem 1.25rem',
               borderTop: '1px solid var(--border-color)',
+              background: 'var(--bg-secondary)',
               display: 'flex',
+              alignItems: 'center',
               justifyContent: 'flex-end',
               gap: '0.65rem'
             }}

@@ -583,8 +583,8 @@ export default function DefectsListView() {
               </button>
             </div>
 
-            <form onSubmit={handleConfirmDevFixed}>
-              <div className="modal-body single-col">
+            <form onSubmit={handleConfirmDevFixed} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
                 <div style={{ padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: '0.5rem' }}>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
                     Target {devFixedTarget.type === 'bug' ? 'Defect' : 'Suggestion'}
@@ -613,11 +613,14 @@ export default function DefectsListView() {
               </div>
 
               <div
+                className="modal-footer"
                 style={{
+                  flexShrink: 0,
                   padding: '1rem 1.5rem',
                   borderTop: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'flex-end',
                   gap: '0.5rem'
                 }}
@@ -655,8 +658,8 @@ export default function DefectsListView() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit}>
-              <div className="modal-body single-col">
+            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
                 <div className="form-group">
                   <label className="form-label">Summary / Title *</label>
                   <input
@@ -725,11 +728,14 @@ export default function DefectsListView() {
               </div>
 
               <div
+                className="modal-footer"
                 style={{
+                  flexShrink: 0,
                   padding: '1rem 1.5rem',
                   borderTop: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'flex-end',
                   gap: '0.5rem'
                 }}
@@ -759,8 +765,8 @@ export default function DefectsListView() {
               </button>
             </div>
 
-            <form onSubmit={handleAddItem}>
-              <div className="modal-body single-col">
+            <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
                 {/* Select Type: Bug vs Suggestion */}
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                   <button
@@ -871,11 +877,14 @@ export default function DefectsListView() {
               </div>
 
               <div
+                className="modal-footer"
                 style={{
+                  flexShrink: 0,
                   padding: '1rem 1.5rem',
                   borderTop: '1px solid var(--border-subtle)',
                   background: 'var(--bg-secondary)',
                   display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'flex-end',
                   gap: '0.5rem'
                 }}

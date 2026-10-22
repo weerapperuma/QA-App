@@ -1053,6 +1053,14 @@ body {
   animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.modal-container > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 @keyframes scaleUp {
   from { transform: scale(0.96); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
@@ -1065,6 +1073,7 @@ body {
   align-items: center;
   justify-content: space-between;
   background: var(--bg-secondary);
+  flex-shrink: 0;
 }
 
 .modal-body {
@@ -1073,10 +1082,23 @@ body {
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 1.75rem;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal-body.single-col {
   display: block;
+}
+
+.modal-footer {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
 }
 
 /* Form Styles */
@@ -1930,16 +1952,29 @@ body {
     border-bottom-right-radius: 0 !important;
   }
 
+  .modal-container > form {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
   .modal-header {
     padding: 0.85rem 1rem !important;
+    flex-shrink: 0 !important;
   }
 
   .modal-body {
     padding: 1rem !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
   }
 
   .modal-footer {
     padding: 0.75rem 1rem !important;
+    flex-shrink: 0 !important;
     flex-direction: column-reverse !important;
     gap: 0.5rem !important;
   }

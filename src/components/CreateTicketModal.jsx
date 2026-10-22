@@ -197,8 +197,8 @@ export default function CreateTicketModal() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="modal-body single-col" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+          <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
             {/* Template Selector Bar */}
             <div
               style={{
@@ -464,7 +464,9 @@ export default function CreateTicketModal() {
 
           {/* Modal Footer */}
           <div
+            className="modal-footer"
             style={{
+              flexShrink: 0,
               padding: '1rem 1.75rem',
               borderTop: '1px solid var(--border-subtle)',
               background: 'var(--bg-secondary)',

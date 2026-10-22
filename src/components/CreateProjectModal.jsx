@@ -51,8 +51,8 @@ export default function CreateProjectModal() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body single-col">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+          <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
             <div className="form-group">
               <label className="form-label">Project Name *</label>
               <input
@@ -111,7 +111,9 @@ export default function CreateProjectModal() {
           </div>
 
           <div
+            className="modal-footer"
             style={{
+              flexShrink: 0,
               padding: '1rem 1.75rem',
               borderTop: '1px solid var(--border-subtle)',
               background: 'var(--bg-secondary)',

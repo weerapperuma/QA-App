@@ -148,14 +148,24 @@ export default function EditFeatureModal() {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflow: 'hidden'
+          }}
+        >
           <div
             className="modal-body"
             style={{
               display: 'flex',
               flexDirection: 'column',
               gap: '1.1rem',
-              maxHeight: '75vh',
+              flex: '1 1 auto',
+              minHeight: 0,
               overflowY: 'auto',
               padding: '1.25rem'
             }}
@@ -363,10 +373,12 @@ export default function EditFeatureModal() {
 
           {/* Footer Actions */}
           <div
+            className="modal-footer"
             style={{
-              padding: '1rem 1.25rem',
+              flexShrink: 0,
+              padding: '0.85rem 1.25rem',
               borderTop: '1px solid var(--border-color)',
-              background: 'var(--bg-surface)',
+              background: 'var(--bg-secondary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
