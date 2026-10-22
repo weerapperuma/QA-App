@@ -532,19 +532,44 @@ export default function FeatureDetailModal() {
                                 background: isVerified
                                   ? 'rgba(16, 185, 129, 0.15)'
                                   : isReadyRetest
-                                  ? 'rgba(99, 102, 241, 0.15)'
-                                  : 'var(--status-critical-bg)',
-                                color: isVerified ? '#10b981' : isReadyRetest ? '#818cf8' : 'var(--status-critical)',
+                                  ? 'var(--status-ready-bg)'
+                                  : bug.status === 'qa_failed'
+                                  ? 'var(--status-critical-bg)'
+                                  : 'var(--status-medium-bg)',
+                                color: isVerified
+                                  ? '#10b981'
+                                  : isReadyRetest
+                                  ? 'var(--status-ready)'
+                                  : bug.status === 'qa_failed'
+                                  ? 'var(--status-critical)'
+                                  : 'var(--status-medium)',
                                 fontSize: '0.68rem'
                               }}
                             >
-                              {isVerified ? 'Verified ✅' : isReadyRetest ? 'Ready for Retest 🚀' : 'Open / In Dev ⚠️'}
+                              {isVerified
+                                ? 'Verified ✅'
+                                : isReadyRetest
+                                ? 'Ready for Retest 🚀'
+                                : bug.status === 'qa_failed'
+                                ? 'QA Failed ❌'
+                                : 'Need Dev ⚠️'}
                             </span>
                           </div>
 
                           {/* Quick Advance for this specific bug */}
                           <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            {bug.status === 'open' || bug.status === 'in_dev' ? (
+                            {bug.status === 'open' && (
+                              <button
+                                className="quick-advance-btn"
+                                style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)', borderColor: 'var(--accent-dev-border)' }}
+                                onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'in_dev')}
+                                title="Developer starts working on this defect"
+                              >
+                                <span>In Dev ➔</span>
+                              </button>
+                            )}
+
+                            {(bug.status === 'open' || bug.status === 'in_dev') && (
                               <button
                                 className="quick-advance-btn"
                                 onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'ready_for_qa')}
@@ -552,18 +577,49 @@ export default function FeatureDetailModal() {
                               >
                                 <span>Dev Fixed ➔</span>
                               </button>
-                            ) : null}
+                            )}
 
                             {bug.status === 'ready_for_qa' ? (
-                              <button
-                                className="quick-advance-btn"
-                                style={{ background: 'var(--accent-qa-subtle)', color: 'var(--accent-qa)', borderColor: 'var(--accent-qa-border)' }}
-                                onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'verified')}
-                                title="QA confirms bug is resolved"
-                              >
-                                <Check size={11} />
-                                <span>QA Pass & Close</span>
-                              </button>
+                              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                <button
+                                  className="quick-advance-btn"
+                                  style={{ background: 'var(--accent-qa-subtle)', color: 'var(--accent-qa)', borderColor: 'var(--accent-qa-border)' }}
+                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'verified')}
+                                  title="QA confirms bug is resolved"
+                                >
+                                  <Check size={11} />
+                                  <span>QA Pass</span>
+                                </button>
+                                <button
+                                  className="quick-advance-btn"
+                                  style={{ background: 'var(--status-critical-bg)', color: 'var(--status-critical)', borderColor: 'var(--status-critical-border)' }}
+                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'qa_failed')}
+                                  title="QA retest failed"
+                                >
+                                  <X size={11} />
+                                  <span>QA Fail</span>
+                                </button>
+                              </div>
+                            ) : null}
+
+                            {bug.status === 'qa_failed' ? (
+                              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                <button
+                                  className="quick-advance-btn"
+                                  style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)', borderColor: 'var(--accent-dev-border)' }}
+                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'in_dev')}
+                                  title="Developer starts rework on failed defect"
+                                >
+                                  <span>In Dev ➔</span>
+                                </button>
+                                <button
+                                  className="quick-advance-btn"
+                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'ready_for_qa')}
+                                  title="Developer marks rework as Dev Fixed"
+                                >
+                                  <span>Dev Fixed ➔</span>
+                                </button>
+                              </div>
                             ) : null}
 
                             {bug.status === 'verified' && (
@@ -769,13 +825,15 @@ export default function FeatureDetailModal() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
                         <select
                           className="form-select"
-                          value={sugg.status}
+                          value={sugg.status || 'open'}
                           onChange={(e) => updateSuggestionStatus(selectedFeature.id, sugg.id, e.target.value)}
                           style={{ fontSize: '0.75rem', padding: '0.3rem', width: 'auto' }}
                         >
-                          <option value="open">Open</option>
-                          <option value="accepted">Accepted</option>
-                          <option value="implemented">Implemented</option>
+                          <option value="open">Need Dev</option>
+                          <option value="in_dev">In Dev</option>
+                          <option value="ready_for_qa">Dev Fixed</option>
+                          <option value="verified">QA Passed</option>
+                          <option value="qa_failed">QA Failed</option>
                         </select>
 
                         <button

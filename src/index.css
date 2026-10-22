@@ -57,6 +57,10 @@
   --status-failed: #ef4444;
   --status-failed-bg: rgba(239, 68, 68, 0.12);
 
+  --status-ready: #c084fc;
+  --status-ready-bg: rgba(139, 92, 246, 0.14);
+  --status-ready-border: rgba(139, 92, 246, 0.38);
+
   --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
   --shadow-glow-dev: 0 0 20px rgba(56, 189, 248, 0.2);
@@ -97,6 +101,18 @@
   --accent-qa: #059669;
   --accent-qa-subtle: rgba(5, 150, 105, 0.08);
   --accent-qa-border: rgba(5, 150, 105, 0.25);
+
+  --status-ready: #7c3aed;
+  --status-ready-bg: rgba(139, 92, 246, 0.12);
+  --status-ready-border: rgba(139, 92, 246, 0.32);
+
+  --status-medium: #b45309;
+  --status-medium-bg: rgba(217, 119, 6, 0.1);
+  --status-medium-border: rgba(217, 119, 6, 0.28);
+
+  --status-critical: #e11d48;
+  --status-critical-bg: rgba(225, 29, 72, 0.1);
+  --status-critical-border: rgba(225, 29, 72, 0.28);
 
   --shadow-card: 0 4px 15px -2px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 12px 25px -4px rgba(0, 0, 0, 0.12);
@@ -1532,6 +1548,46 @@ body {
   background: rgba(244, 63, 94, 0.12);
   color: var(--status-critical);
   border-color: var(--status-critical-border);
+}
+
+/* Theme-friendly Status Dropdown Select */
+.status-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-dropdown-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding: 0.35rem 1.75rem 0.35rem 0.8rem;
+  border-radius: var(--radius-full);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1.25;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.status-dropdown-select:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+}
+
+.status-dropdown-select:focus {
+  box-shadow: 0 0 0 2px var(--border-glow);
+}
+
+.status-dropdown-select option {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  font-weight: 600;
+  padding: 8px 12px;
 }
 
 .type-icon-box {

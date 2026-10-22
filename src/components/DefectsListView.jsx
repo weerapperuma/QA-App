@@ -96,6 +96,7 @@ export default function DefectsListView() {
       if (statusFilter === 'in_dev' && s !== 'in_dev') return false;
       if (statusFilter === 'ready_for_qa' && s !== 'ready_for_qa') return false;
       if (statusFilter === 'verified' && s !== 'verified' && s !== 'implemented') return false;
+      if (statusFilter === 'qa_failed' && s !== 'qa_failed' && s !== 'failed') return false;
     }
     return true;
   });
@@ -242,11 +243,6 @@ export default function DefectsListView() {
   const handleStatusChange = (item, newStatus) => {
     if (!newStatus || newStatus === item.status) return;
 
-    if (newStatus === 'ready_for_qa') {
-      openDevFixedModal(item);
-      return;
-    }
-
     if (item.type === 'suggestion') {
       updateSuggestionStatus(item.featureId, item.id, newStatus);
     } else {
@@ -258,7 +254,7 @@ export default function DefectsListView() {
     }
   };
 
-  // Status Dropdown rendering current status with instant change
+  // Status Dropdown rendering current status with theme-friendly styling
   const renderStatusDropdown = (item) => {
     const currentStatus = item.status || 'open';
 
@@ -266,71 +262,67 @@ export default function DefectsListView() {
       switch (status) {
         case 'in_dev':
           return {
-            background: 'rgba(56, 189, 248, 0.12)',
+            background: 'var(--accent-dev-subtle)',
             color: 'var(--accent-dev)',
             border: '1px solid var(--accent-dev-border)'
           };
         case 'ready_for_qa':
           return {
-            background: 'rgba(139, 92, 246, 0.14)',
-            color: '#c084fc',
-            border: '1px solid rgba(139, 92, 246, 0.4)'
+            background: 'var(--status-ready-bg)',
+            color: 'var(--status-ready)',
+            border: '1px solid var(--status-ready-border)'
           };
         case 'verified':
         case 'implemented':
           return {
-            background: 'rgba(16, 185, 129, 0.14)',
-            color: '#10b981',
-            border: '1px solid rgba(16, 185, 129, 0.35)'
+            background: 'var(--accent-qa-subtle)',
+            color: 'var(--accent-qa)',
+            border: '1px solid var(--accent-qa-border)'
+          };
+        case 'qa_failed':
+        case 'failed':
+          return {
+            background: 'var(--status-critical-bg)',
+            color: 'var(--status-critical)',
+            border: '1px solid var(--status-critical-border)'
           };
         case 'open':
         case 'new':
         default:
           return {
-            background: 'rgba(245, 158, 11, 0.12)',
-            color: '#f59e0b',
-            border: '1px solid rgba(245, 158, 11, 0.35)'
+            background: 'var(--status-medium-bg)',
+            color: 'var(--status-medium)',
+            border: '1px solid var(--status-medium-border)'
           };
       }
     };
 
     return (
       <div
-        style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+        className="status-dropdown-wrap"
         onClick={(e) => e.stopPropagation()}
       >
         <select
           value={currentStatus}
           onChange={(e) => handleStatusChange(item, e.target.value)}
           className="status-dropdown-select"
-          style={{
-            ...getStatusStyle(currentStatus),
-            appearance: 'none',
-            WebkitAppearance: 'none',
-            MozAppearance: 'none',
-            padding: '0.32rem 1.65rem 0.32rem 0.75rem',
-            borderRadius: '999px',
-            fontSize: '0.76rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            outline: 'none',
-            fontFamily: 'inherit',
-            transition: 'all 0.15s ease',
-            lineHeight: 1.2
-          }}
-          title="Change current status"
+          style={getStatusStyle(currentStatus)}
+          title="Click to change status"
         >
-          <option value="open" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-            🟡 Needs Dev
+          <option value="open">
+            🟡 Need Dev
           </option>
-          <option value="in_dev" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+          <option value="in_dev">
             🔵 In Dev
           </option>
-          <option value="ready_for_qa" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+          <option value="ready_for_qa">
             🟣 Dev Fixed
           </option>
-          <option value="verified" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+          <option value="verified">
             🟢 QA Passed
+          </option>
+          <option value="qa_failed">
+            🔴 QA Failed
           </option>
         </select>
         <ChevronDown
@@ -341,7 +333,7 @@ export default function DefectsListView() {
             top: '50%',
             transform: 'translateY(-50%)',
             pointerEvents: 'none',
-            opacity: 0.7,
+            opacity: 0.75,
             color: 'currentColor'
           }}
         />
@@ -463,10 +455,11 @@ export default function DefectsListView() {
             style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
           >
             <option value="all">All Statuses</option>
-            <option value="open">Needs Dev (In Dev)</option>
-            <option value="in_dev">In Development</option>
-            <option value="ready_for_qa">Dev Fixed (Ready for QA)</option>
-            <option value="verified">QA Passed (Closed)</option>
+            <option value="open">🟡 Need Dev</option>
+            <option value="in_dev">🔵 In Development</option>
+            <option value="ready_for_qa">🟣 Dev Fixed</option>
+            <option value="verified">🟢 QA Passed</option>
+            <option value="qa_failed">🔴 QA Failed</option>
           </select>
         </div>
       </div>
@@ -817,10 +810,11 @@ export default function DefectsListView() {
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value)}
                     >
-                      <option value="open">🟡 Needs Dev (Open)</option>
+                      <option value="open">🟡 Need Dev (Open)</option>
                       <option value="in_dev">🔵 In Development</option>
                       <option value="ready_for_qa">🟣 Dev Fixed (Ready for QA)</option>
                       <option value="verified">🟢 QA Passed (Closed)</option>
+                      <option value="qa_failed">🔴 QA Failed (Retest Failed)</option>
                     </select>
                   </div>
                 </div>

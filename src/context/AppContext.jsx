@@ -1072,9 +1072,13 @@ export function AppProvider({ children }) {
       });
       addToast(`Defect [${bugId}] verified & passed by QA! 🎉`, 'verified');
     } else if (newStatus === 'ready_for_qa') {
-      addToast(`Defect [${bugId}] marked Dev Fixed with resolution note. Handed over to QA!`, 'success');
+      addToast(`Defect [${bugId}] marked Dev Fixed. Ready for QA retest!`, 'success');
+    } else if (newStatus === 'qa_failed') {
+      addToast(`Defect [${bugId}] marked QA Failed! Returned for rework.`, 'warning', 'QA Retest Failed');
     } else if (newStatus === 'in_dev') {
       addToast(`Defect [${bugId}] moved to In Development.`, 'info');
+    } else if (newStatus === 'open') {
+      addToast(`Defect [${bugId}] moved to Need Dev.`, 'info');
     }
 
     const updatedBugs = (feat.bugs || []).map((b) =>
@@ -1193,9 +1197,13 @@ export function AppProvider({ children }) {
       });
       addToast(`Suggestion [${suggId}] verified and closed! 🎉`, 'verified');
     } else if (newStatus === 'ready_for_qa') {
-      addToast(`Suggestion [${suggId}] marked Dev Implemented with resolution note. Ready for QA retest!`, 'success');
+      addToast(`Suggestion [${suggId}] marked Dev Implemented. Ready for QA retest!`, 'success');
+    } else if (newStatus === 'qa_failed') {
+      addToast(`Suggestion [${suggId}] marked QA Failed! Returned for rework.`, 'warning', 'QA Retest Failed');
     } else if (newStatus === 'in_dev') {
       addToast(`Suggestion [${suggId}] moved to In Development.`, 'info');
+    } else if (newStatus === 'open') {
+      addToast(`Suggestion [${suggId}] moved to Need Dev.`, 'info');
     }
 
     const updatedSuggs = (feat.suggestions || []).map((s) =>
