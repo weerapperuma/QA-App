@@ -11,7 +11,8 @@ import {
   Check,
   Trash2,
   Edit2,
-  Code2
+  Code2,
+  ChevronDown
 } from 'lucide-react';
 
 export default function DefectsListView() {
@@ -24,6 +25,7 @@ export default function DefectsListView() {
     updateFeatureBug,
     updateSuggestionStatus,
     updateFeatureSuggestion,
+    convertDefectType,
     addBugToFeature,
     addSuggestionToFeature,
     deleteBugFromFeature,
@@ -52,6 +54,7 @@ export default function DefectsListView() {
 
   // Edit Modal state
   const [editItem, setEditItem] = useState(null);
+  const [editType, setEditType] = useState('bug');
   const [editTitle, setEditTitle] = useState('');
   const [editSeverity, setEditSeverity] = useState('Medium');
   const [editReproSteps, setEditReproSteps] = useState('');
@@ -153,6 +156,9 @@ export default function DefectsListView() {
     }
 
     setIsDevFixedModalOpen(false);
+    if (viewItem && viewItem.id === devFixedTarget.id) {
+      setViewItem((prev) => (prev ? { ...prev, status: 'ready_for_qa', devNote: devNoteText.trim() } : null));
+    }
     setDevFixedTarget(null);
     setDevNoteText('');
   };
@@ -178,6 +184,7 @@ export default function DefectsListView() {
   // Edit Handlers
   const openEditModal = (item) => {
     setEditItem(item);
+    setEditType(item.type || 'bug');
     setEditTitle(item.title || '');
     setEditSeverity(item.severity || item.priority || 'Medium');
     setEditReproSteps(item.reproSteps || item.notes || '');
@@ -189,7 +196,17 @@ export default function DefectsListView() {
     e.preventDefault();
     if (!editItem || !editTitle.trim()) return;
 
-    if (editItem.type === 'suggestion') {
+    if (editType !== editItem.type) {
+      convertDefectType(editItem.featureId, editItem.id, editItem.type, editType, {
+        title: editTitle.trim(),
+        severity: editSeverity,
+        priority: editSeverity,
+        reproSteps: editReproSteps.trim(),
+        notes: editReproSteps.trim(),
+        devNote: editDevNote.trim(),
+        status: editStatus
+      });
+    } else if (editType === 'suggestion') {
       updateFeatureSuggestion(editItem.featureId, editItem.id, {
         title: editTitle.trim(),
         priority: editSeverity,
@@ -221,63 +238,114 @@ export default function DefectsListView() {
     }
   };
 
-  // Status Lifecycle Action Button
-  const renderStatusButton = (item) => {
-    const status = item.status || 'open';
+  // Direct Status Change Handler
+  const handleStatusChange = (item, newStatus) => {
+    if (!newStatus || newStatus === item.status) return;
 
-    if (status === 'open' || status === 'new') {
-      return (
-        <button
-          type="button"
-          className="status-flow-btn in-dev-action"
-          onClick={() => handleMoveToInDev(item)}
-          title="Developer: Click to move to In Development"
-        >
-          <Code2 size={12} />
-          <span>In Dev</span>
-        </button>
-      );
+    if (newStatus === 'ready_for_qa') {
+      openDevFixedModal(item);
+      return;
     }
 
-    if (status === 'in_dev') {
-      return (
-        <button
-          type="button"
-          className="status-flow-btn dev-fixed-action"
-          onClick={() => openDevFixedModal(item)}
-          title="Developer: Click to add resolution note and mark as Dev Fixed"
-        >
-          <Check size={12} />
-          <span>Dev Fixed</span>
-        </button>
-      );
+    if (item.type === 'suggestion') {
+      updateSuggestionStatus(item.featureId, item.id, newStatus);
+    } else {
+      updateFeatureBugStatus(item.featureId, item.id, newStatus);
     }
 
-    if (status === 'ready_for_qa') {
-      return (
-        <button
-          type="button"
-          className="status-flow-btn qa-passed-action"
-          onClick={() => handleQAPass(item)}
-          title="QA: Click to verify fix and pass"
-        >
-          <CheckCircle2 size={12} />
-          <span>QA Passed</span>
-        </button>
-      );
+    if (viewItem && viewItem.id === item.id) {
+      setViewItem((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
+  };
 
-    // Verified / Implemented / Closed
+  // Status Dropdown rendering current status with instant change
+  const renderStatusDropdown = (item) => {
+    const currentStatus = item.status || 'open';
+
+    const getStatusStyle = (status) => {
+      switch (status) {
+        case 'in_dev':
+          return {
+            background: 'rgba(56, 189, 248, 0.12)',
+            color: 'var(--accent-dev)',
+            border: '1px solid var(--accent-dev-border)'
+          };
+        case 'ready_for_qa':
+          return {
+            background: 'rgba(139, 92, 246, 0.14)',
+            color: '#c084fc',
+            border: '1px solid rgba(139, 92, 246, 0.4)'
+          };
+        case 'verified':
+        case 'implemented':
+          return {
+            background: 'rgba(16, 185, 129, 0.14)',
+            color: '#10b981',
+            border: '1px solid rgba(16, 185, 129, 0.35)'
+          };
+        case 'open':
+        case 'new':
+        default:
+          return {
+            background: 'rgba(245, 158, 11, 0.12)',
+            color: '#f59e0b',
+            border: '1px solid rgba(245, 158, 11, 0.35)'
+          };
+      }
+    };
+
     return (
-      <button
-        type="button"
-        className="status-flow-btn closed-action"
-        onClick={() => handleReopen(item)}
-        title="Verified & Closed. Click to reopen if needed"
+      <div
+        style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <CheckCircle2 size={12} />
-        <span>Passed</span>
-      </button>
+        <select
+          value={currentStatus}
+          onChange={(e) => handleStatusChange(item, e.target.value)}
+          className="status-dropdown-select"
+          style={{
+            ...getStatusStyle(currentStatus),
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+            padding: '0.32rem 1.65rem 0.32rem 0.75rem',
+            borderRadius: '999px',
+            fontSize: '0.76rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            outline: 'none',
+            fontFamily: 'inherit',
+            transition: 'all 0.15s ease',
+            lineHeight: 1.2
+          }}
+          title="Change current status"
+        >
+          <option value="open" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            🟡 Needs Dev
+          </option>
+          <option value="in_dev" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            🔵 In Dev
+          </option>
+          <option value="ready_for_qa" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            🟣 Dev Fixed
+          </option>
+          <option value="verified" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            🟢 QA Passed
+          </option>
+        </select>
+        <ChevronDown
+          size={12}
+          style={{
+            position: 'absolute',
+            right: '0.55rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            opacity: 0.7,
+            color: 'currentColor'
+          }}
+        />
+      </div>
     );
   };
 
@@ -512,10 +580,10 @@ export default function DefectsListView() {
                       </span>
                     </td>
 
-                    {/* Status Lifecycle Button */}
+                    {/* Status Dropdown */}
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', justifyContent: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        {renderStatusButton(item)}
+                        {renderStatusDropdown(item)}
                       </div>
                     </td>
 
@@ -651,7 +719,7 @@ export default function DefectsListView() {
           <div className="modal-container" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>
-                Edit {editItem.type === 'bug' ? 'Defect' : 'Suggestion'}
+                Edit {editType === 'bug' ? 'Defect / Bug' : 'QA Suggestion'}
               </span>
               <button className="btn-icon" onClick={() => setEditItem(null)}>
                 <X size={18} />
@@ -660,6 +728,50 @@ export default function DefectsListView() {
 
             <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
               <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
+                {/* Switch Classification: Bug vs Suggestion */}
+                <div style={{ marginBottom: '1.15rem' }}>
+                  <label className="form-label" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>
+                    Item Classification
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className={`btn ${editType === 'bug' ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem'
+                      }}
+                      onClick={() => setEditType('bug')}
+                    >
+                      <Bug size={14} />
+                      <span>Defect / Bug</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`btn ${editType === 'suggestion' ? 'btn-qa' : 'btn-secondary'}`}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem'
+                      }}
+                      onClick={() => setEditType('suggestion')}
+                    >
+                      <Lightbulb size={14} />
+                      <span>QA Suggestion</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Summary / Title *</label>
                   <input
@@ -674,17 +786,27 @@ export default function DefectsListView() {
                 <div className="responsive-form-grid-2">
                   <div className="form-group">
                     <label className="form-label">
-                      {editItem.type === 'bug' ? 'Severity' : 'Priority'}
+                      {editType === 'bug' ? 'Severity' : 'Priority'}
                     </label>
                     <select
                       className="form-select"
                       value={editSeverity}
                       onChange={(e) => setEditSeverity(e.target.value)}
                     >
-                      <option value="Critical">🔴 Critical (Blocker)</option>
-                      <option value="High">🟠 High</option>
-                      <option value="Medium">🟡 Medium</option>
-                      <option value="Low">🔵 Low</option>
+                      {editType === 'bug' ? (
+                        <>
+                          <option value="Critical">🔴 Critical (Blocker)</option>
+                          <option value="High">🟠 High Priority</option>
+                          <option value="Medium">🟡 Medium Priority</option>
+                          <option value="Low">🔵 Low Priority</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="High">🟠 High Priority</option>
+                          <option value="Medium">🟡 Medium Priority</option>
+                          <option value="Low">🔵 Low Priority</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -695,22 +817,23 @@ export default function DefectsListView() {
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value)}
                     >
-                      <option value="open">Needs Dev (In Dev)</option>
-                      <option value="in_dev">In Development</option>
-                      <option value="ready_for_qa">Dev Fixed (Ready for QA)</option>
-                      <option value="verified">QA Passed (Closed)</option>
+                      <option value="open">🟡 Needs Dev (Open)</option>
+                      <option value="in_dev">🔵 In Development</option>
+                      <option value="ready_for_qa">🟣 Dev Fixed (Ready for QA)</option>
+                      <option value="verified">🟢 QA Passed (Closed)</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">
-                    {editItem.type === 'bug' ? 'Steps to Reproduce' : 'Suggestion Details'}
+                    {editType === 'bug' ? 'Steps to Reproduce' : 'Suggestion Details / Improvement Notes'}
                   </label>
                   <textarea
                     className="form-textarea"
                     value={editReproSteps}
                     onChange={(e) => setEditReproSteps(e.target.value)}
+                    placeholder={editType === 'bug' ? '1. Navigate to screen\n2. Click action\n3. Observe crash...' : 'Explain the improvement and expected benefit...'}
                     style={{ minHeight: '75px' }}
                   />
                 </div>
@@ -967,7 +1090,7 @@ export default function DefectsListView() {
               )}
 
               <div style={{ display: 'flex', gap: '0.65rem', marginTop: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {renderStatusButton(viewItem)}
+                {renderStatusDropdown(viewItem)}
 
                 <button
                   type="button"

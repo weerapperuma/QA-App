@@ -1264,6 +1264,65 @@ export function AppProvider({ children }) {
     addToast(`Suggestion [${suggId}] deleted successfully.`, 'info', 'Suggestion Removed');
   };
 
+  // Convert defect classification between 'bug' and 'suggestion'
+  const convertDefectType = async (featureId, itemId, fromType, toType, updatedData = {}) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    let updatedBugs = [...(feat.bugs || [])];
+    let updatedSuggs = [...(feat.suggestions || [])];
+
+    if (fromType === 'bug' && toType === 'suggestion') {
+      const existingBug = updatedBugs.find((b) => b.id === itemId) || {};
+      updatedBugs = updatedBugs.filter((b) => b.id !== itemId);
+      const newSuggestion = {
+        id: itemId.startsWith('BUG-') ? itemId.replace('BUG-', 'SUGG-') : itemId,
+        title: updatedData.title || existingBug.title || 'Untitled Suggestion',
+        priority: updatedData.priority || updatedData.severity || existingBug.severity || 'Medium',
+        notes: updatedData.notes || updatedData.reproSteps || existingBug.reproSteps || '',
+        devNote: updatedData.devNote !== undefined ? updatedData.devNote : (existingBug.devNote || ''),
+        status: updatedData.status || existingBug.status || 'open',
+        reportedBy: existingBug.reportedBy || (currentUser && currentUser.id) || 'user-admin',
+        createdAt: existingBug.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      updatedSuggs = [newSuggestion, ...updatedSuggs];
+    } else if (fromType === 'suggestion' && toType === 'bug') {
+      const existingSugg = updatedSuggs.find((s) => s.id === itemId) || {};
+      updatedSuggs = updatedSuggs.filter((s) => s.id !== itemId);
+      const newBug = {
+        id: itemId.startsWith('SUGG-') ? itemId.replace('SUGG-', 'BUG-') : itemId,
+        title: updatedData.title || existingSugg.title || 'Untitled Defect',
+        severity: updatedData.severity || updatedData.priority || existingSugg.priority || 'Medium',
+        reproSteps: updatedData.reproSteps || updatedData.notes || existingSugg.notes || '',
+        devNote: updatedData.devNote !== undefined ? updatedData.devNote : (existingSugg.devNote || ''),
+        status: updatedData.status || existingSugg.status || 'open',
+        reportedBy: existingSugg.reportedBy || (currentUser && currentUser.id) || 'user-admin',
+        assignedDev: feat.assignedDev || (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin',
+        createdAt: existingSugg.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      updatedBugs = [newBug, ...updatedBugs];
+    }
+
+    const updatedFeature = {
+      ...feat,
+      bugs: updatedBugs,
+      suggestions: updatedSuggs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Reclassified item as ${toType === 'bug' ? 'Defect / Bug' : 'QA Suggestion'}.`, 'success');
+  };
+
   // Ticket Operations
   const openTicket = (ticketOrId) => {
     const id = typeof ticketOrId === 'object' ? ticketOrId.id : ticketOrId;
@@ -1696,6 +1755,7 @@ export function AppProvider({ children }) {
         updateSuggestionStatus,
         updateFeatureSuggestion,
         deleteSuggestionFromFeature,
+        convertDefectType,
         updateFeatureModule,
         modules,
         projectModules,
