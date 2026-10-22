@@ -1036,6 +1036,29 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Delete Bug from Feature
+  const deleteBugFromFeature = async (featureId, bugId) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const updatedBugs = (feat.bugs || []).filter((b) => b.id !== bugId);
+    const updatedFeature = {
+      ...feat,
+      bugs: updatedBugs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Defect [${bugId}] deleted successfully.`, 'info', 'Defect Removed');
+  };
+
   // Add QA Suggestion / Improvement to Feature
   const addSuggestionToFeature = async (featureId, suggData) => {
     const feat = features.find((f) => f.id === featureId);
@@ -1094,6 +1117,29 @@ export function AppProvider({ children }) {
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(updatedFeature);
     }
+  };
+
+  // Delete Suggestion from Feature
+  const deleteSuggestionFromFeature = async (featureId, suggId) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const updatedSuggs = (feat.suggestions || []).filter((s) => s.id !== suggId);
+    const updatedFeature = {
+      ...feat,
+      suggestions: updatedSuggs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Suggestion [${suggId}] deleted successfully.`, 'info', 'Suggestion Removed');
   };
 
   // Ticket Operations
@@ -1515,8 +1561,10 @@ export function AppProvider({ children }) {
         moveFeatureCard,
         addBugToFeature,
         updateFeatureBugStatus,
+        deleteBugFromFeature,
         addSuggestionToFeature,
         updateSuggestionStatus,
+        deleteSuggestionFromFeature,
         updateFeatureModule,
         modules,
         projectModules,

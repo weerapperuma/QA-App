@@ -18,7 +18,8 @@ import {
   Check,
   FolderTree,
   FolderPlus,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 
 export default function FeatureDetailModal() {
@@ -28,8 +29,10 @@ export default function FeatureDetailModal() {
     updateFeatureStatus,
     addBugToFeature,
     updateFeatureBugStatus,
+    deleteBugFromFeature,
     addSuggestionToFeature,
     updateSuggestionStatus,
+    deleteSuggestionFromFeature,
     activeProject,
     projectFeatures,
     allModuleNames,
@@ -533,6 +536,27 @@ export default function FeatureDetailModal() {
                                 Verified
                               </span>
                             )}
+
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              style={{
+                                padding: '3px',
+                                width: '24px',
+                                height: '24px',
+                                color: 'var(--status-critical)',
+                                border: '1px solid var(--status-critical-border)',
+                                background: 'var(--status-critical-bg)'
+                              }}
+                              onClick={() => {
+                                if (window.confirm(`Delete defect [${bug.id}] "${bug.title}"?`)) {
+                                  deleteBugFromFeature(selectedFeature.id, bug.id);
+                                }
+                              }}
+                              title="Delete Defect"
+                            >
+                              <Trash2 size={12} />
+                            </button>
                           </div>
                         </div>
 
@@ -697,16 +721,39 @@ export default function FeatureDetailModal() {
                         )}
                       </div>
 
-                      <select
-                        className="form-select"
-                        value={sugg.status}
-                        onChange={(e) => updateSuggestionStatus(selectedFeature.id, sugg.id, e.target.value)}
-                        style={{ fontSize: '0.75rem', padding: '0.3rem', width: 'auto' }}
-                      >
-                        <option value="open">Open</option>
-                        <option value="accepted">Accepted</option>
-                        <option value="implemented">Implemented</option>
-                      </select>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                        <select
+                          className="form-select"
+                          value={sugg.status}
+                          onChange={(e) => updateSuggestionStatus(selectedFeature.id, sugg.id, e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '0.3rem', width: 'auto' }}
+                        >
+                          <option value="open">Open</option>
+                          <option value="accepted">Accepted</option>
+                          <option value="implemented">Implemented</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            padding: '3px',
+                            width: '24px',
+                            height: '24px',
+                            color: 'var(--status-critical)',
+                            border: '1px solid var(--status-critical-border)',
+                            background: 'var(--status-critical-bg)'
+                          }}
+                          onClick={() => {
+                            if (window.confirm(`Delete suggestion [${sugg.id}] "${sugg.title}"?`)) {
+                              deleteSuggestionFromFeature(selectedFeature.id, sugg.id);
+                            }
+                          }}
+                          title="Delete Suggestion"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

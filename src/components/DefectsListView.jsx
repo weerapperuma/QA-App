@@ -13,7 +13,8 @@ import {
   Layers,
   X,
   Check,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 
 export default function DefectsListView() {
@@ -26,6 +27,8 @@ export default function DefectsListView() {
     updateSuggestionStatus,
     addBugToFeature,
     addSuggestionToFeature,
+    deleteBugFromFeature,
+    deleteSuggestionFromFeature,
     team
   } = useApp();
 
@@ -405,6 +408,32 @@ export default function DefectsListView() {
                             Closed
                           </span>
                         )}
+
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            padding: '3px',
+                            width: '24px',
+                            height: '24px',
+                            color: 'var(--status-critical)',
+                            border: '1px solid var(--status-critical-border)',
+                            background: 'var(--status-critical-bg)'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete ${item.type === 'bug' ? 'defect' : 'suggestion'} [${item.id}] "${item.title}"?`)) {
+                              if (item.type === 'suggestion') {
+                                deleteSuggestionFromFeature(item.featureId, item.id);
+                              } else {
+                                deleteBugFromFeature(item.featureId, item.id);
+                              }
+                            }
+                          }}
+                          title={`Delete ${item.type === 'bug' ? 'Defect' : 'Suggestion'}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -616,7 +645,7 @@ export default function DefectsListView() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '0.65rem', marginTop: '1.25rem' }}>
+              <div style={{ display: 'flex', gap: '0.65rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
                 {viewItem.status !== 'ready_for_qa' && viewItem.status !== 'verified' && (
                   <button
                     className="btn btn-primary"
@@ -643,6 +672,35 @@ export default function DefectsListView() {
                     <span>QA Pass & Close</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    fontSize: '0.82rem',
+                    background: 'rgba(244, 63, 94, 0.1)',
+                    color: 'var(--status-critical)',
+                    border: '1px solid var(--status-critical-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    if (window.confirm(`Delete ${viewItem.type === 'bug' ? 'defect' : 'suggestion'} [${viewItem.id}] "${viewItem.title}"?`)) {
+                      if (viewItem.type === 'suggestion') {
+                        deleteSuggestionFromFeature(viewItem.featureId, viewItem.id);
+                      } else {
+                        deleteBugFromFeature(viewItem.featureId, viewItem.id);
+                      }
+                      setViewItem(null);
+                    }
+                  }}
+                  title={`Delete ${viewItem.type === 'bug' ? 'Defect' : 'Suggestion'}`}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete</span>
+                </button>
               </div>
             </div>
           </div>
