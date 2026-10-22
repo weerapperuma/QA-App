@@ -9,6 +9,7 @@ import TicketDetailModal from './components/TicketDetailModal';
 import CreateTicketModal from './components/CreateTicketModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import CreateFeatureModal from './components/CreateFeatureModal';
+import EditFeatureModal from './components/EditFeatureModal';
 import CreateModuleModal from './components/CreateModuleModal';
 import UserManagementModal from './components/UserManagementModal';
 import NotificationToast from './components/NotificationToast';
@@ -44,6 +45,7 @@ function MainApp() {
       <CreateTicketModal />
       <CreateProjectModal />
       <CreateFeatureModal />
+      <EditFeatureModal />
       <CreateModuleModal />
       <UserManagementModal />
       <NotificationToast />

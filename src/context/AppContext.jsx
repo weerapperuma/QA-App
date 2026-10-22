@@ -190,6 +190,18 @@ export function AppProvider({ children }) {
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
   const [isCreateFeatureModalOpen, setIsCreateFeatureModalOpen] = useState(false);
   const [createFeatureModalProps, setCreateFeatureModalProps] = useState(null);
+  const [editingFeature, setEditingFeature] = useState(null);
+  const [isEditFeatureModalOpen, setIsEditFeatureModalOpen] = useState(false);
+
+  const openEditFeatureModal = (feat) => {
+    setEditingFeature(feat);
+    setIsEditFeatureModalOpen(true);
+  };
+
+  const closeEditFeatureModal = () => {
+    setIsEditFeatureModalOpen(false);
+    setEditingFeature(null);
+  };
   const [prefillBugData, setPrefillBugData] = useState(null);
   const [activeTestSuiteId, setActiveTestSuiteId] = useState('TS-1');
 
@@ -831,6 +843,51 @@ export function AppProvider({ children }) {
     }
 
     addToast(`Feature "${feat.name}" moved to module "${resolvedModuleName}"`, 'info');
+  };
+
+  const updateFeature = async (featureId, updatedData) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const moduleName = updatedData.moduleName ? updatedData.moduleName.trim() : feat.moduleName;
+
+    // Auto-create module in modules if typed and not yet registered
+    if (moduleName && moduleName.toLowerCase() !== 'general') {
+      const modExists = (modules || []).some(
+        (m) => m.projectId === activeProjectId && m.name.toLowerCase() === moduleName.toLowerCase()
+      );
+      if (!modExists) {
+        const autoMod = {
+          id: `mod-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+          projectId: activeProjectId,
+          name: moduleName,
+          description: '',
+          createdAt: new Date().toISOString()
+        };
+        setModules((prev) => [...prev, autoMod]);
+        if (firebaseStatus === 'connected') {
+          saveModuleToFirestore(autoMod);
+        }
+      }
+    }
+
+    const updatedFeature = {
+      ...feat,
+      ...updatedData,
+      moduleName: moduleName || 'General',
+      updatedAt: new Date().toISOString()
+    };
+
+    setFeatures((prev) =>
+      prev.map((f) => (f.id === featureId ? updatedFeature : f))
+    );
+
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+
+    addToast(`Feature "${updatedFeature.name}" updated successfully!`, 'success', 'Feature Updated');
+    return updatedFeature;
   };
 
   const deleteFeature = async (featureId) => {
@@ -1621,7 +1678,14 @@ export function AppProvider({ children }) {
         openFeature,
         closeFeature,
         createFeature,
+        updateFeature,
         deleteFeature,
+        editingFeature,
+        setEditingFeature,
+        isEditFeatureModalOpen,
+        setIsEditFeatureModalOpen,
+        openEditFeatureModal,
+        closeEditFeatureModal,
         updateFeatureStatus,
         moveFeatureCard,
         addBugToFeature,

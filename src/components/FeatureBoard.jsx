@@ -15,7 +15,8 @@ import {
   Filter,
   Kanban as KanbanIcon,
   ListTree,
-  Trash2
+  Trash2,
+  Edit2
 } from 'lucide-react';
 
 const FEATURE_COLUMNS = [
@@ -32,6 +33,7 @@ export default function FeatureBoard() {
     allModuleNames,
     activeProject,
     openFeature,
+    openEditFeatureModal,
     updateFeatureStatus,
     moveFeatureCard,
     team,
@@ -646,6 +648,25 @@ export default function FeatureBoard() {
                                 </span>
                               )}
 
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditFeatureModal(feat);
+                                }}
+                                title="Edit Feature"
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  color: 'var(--accent-dev)',
+                                  background: 'rgba(56, 189, 248, 0.1)',
+                                  border: '1px solid var(--accent-dev-border)'
+                                }}
+                              >
+                                <Edit2 size={12} />
+                              </button>
+
                               <ChevronRight size={14} color="var(--text-muted)" />
                             </div>
                           </div>
@@ -837,18 +858,44 @@ export default function FeatureBoard() {
                               )}
                             </div>
 
-                            {/* Release Pill */}
-                            {feat.targetRelease && (
-                              <span
-                                style={{
-                                  fontSize: '0.68rem',
-                                  color: 'var(--text-muted)',
-                                  fontFamily: 'var(--font-mono)'
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              {/* Release Pill */}
+                              {feat.targetRelease && (
+                                <span
+                                  style={{
+                                    fontSize: '0.68rem',
+                                    color: 'var(--text-muted)',
+                                    fontFamily: 'var(--font-mono)'
+                                  }}
+                                >
+                                  {feat.targetRelease}
+                                </span>
+                              )}
+
+                              {/* Edit Feature Button */}
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditFeatureModal(feat);
                                 }}
+                                title="Edit Feature"
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  padding: '2px',
+                                  color: 'var(--text-muted)',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderRadius: '4px'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-dev)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                               >
-                                {feat.targetRelease}
-                              </span>
-                            )}
+                                <Edit2 size={11} />
+                              </button>
+                            </div>
                           </div>
 
                           {/* Feature Name */}

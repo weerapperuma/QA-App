@@ -19,13 +19,15 @@ import {
   FolderTree,
   FolderPlus,
   ChevronRight,
-  Trash2
+  Trash2,
+  Edit2
 } from 'lucide-react';
 
 export default function FeatureDetailModal() {
   const {
     selectedFeature,
     closeFeature,
+    openEditFeatureModal,
     updateFeatureStatus,
     addBugToFeature,
     updateFeatureBugStatus,
@@ -172,9 +174,31 @@ export default function FeatureDetailModal() {
             )}
           </div>
 
-          <button className="btn-icon" onClick={closeFeature}>
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => openEditFeatureModal(selectedFeature)}
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.35rem 0.75rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                color: 'var(--accent-dev)',
+                background: 'rgba(56, 189, 248, 0.1)',
+                borderColor: 'var(--accent-dev-border)'
+              }}
+              title="Edit Feature details, module, and settings"
+            >
+              <Edit2 size={13} />
+              <span>Edit Feature</span>
+            </button>
+
+            <button className="btn-icon" onClick={closeFeature} type="button">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -183,11 +207,22 @@ export default function FeatureDetailModal() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Title & Description */}
             <div>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.5rem' }}>
-                {selectedFeature.name}
-              </h2>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                {selectedFeature.description}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0 }}>
+                  {selectedFeature.name}
+                </h2>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => openEditFeatureModal(selectedFeature)}
+                  title="Edit Feature"
+                  style={{ width: '28px', height: '28px', color: 'var(--accent-dev)' }}
+                >
+                  <Edit2 size={14} />
+                </button>
+              </div>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '0.5rem' }}>
+                {selectedFeature.description || 'No description provided.'}
               </p>
             </div>
 
