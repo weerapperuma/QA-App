@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Layers,
-  Code2,
-  CheckCircle2,
-  Plus,
   Sun,
   Moon,
   Building2,
@@ -13,13 +10,11 @@ import {
   ChevronDown,
   Check,
   LogOut,
-  User
+  Plus
 } from 'lucide-react';
 
 export default function Header() {
   const {
-    role,
-    setRole,
     theme,
     toggleTheme,
     projects,
@@ -27,12 +22,10 @@ export default function Header() {
     setActiveProjectId,
     activeProject,
     setIsCreateProjectModalOpen,
-    setIsCreateFeatureModalOpen,
     activeTab,
     setActiveTab,
     projectFeatures,
     allFeatureDefects = [],
-    resetDemoData,
     currentUser,
     logout,
     loginAs,
@@ -104,7 +97,8 @@ export default function Header() {
                 padding: '1px 6px',
                 borderRadius: '4px',
                 color: 'var(--accent-dev)',
-                border: '1px solid var(--accent-dev-border)'
+                border: '1px solid var(--accent-dev-border)',
+                flexShrink: 0
               }}
             >
               {activeProject?.code || 'PROJ'}
@@ -114,7 +108,8 @@ export default function Header() {
               style={{
                 transform: isProjectDropdownOpen ? 'rotate(180deg)' : 'none',
                 transition: 'transform 0.2s ease',
-                color: 'var(--text-muted)'
+                color: 'var(--text-muted)',
+                flexShrink: 0
               }}
             />
           </button>
@@ -227,101 +222,26 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Right: New Feature, Persona Toggle, Theme, and User Profile with Logout */}
+      {/* Right: Theme Toggle & Current User Profile with Popover */}
       <div className="header-right">
-        {/* Actions Group (Dev/QA Switcher, Manage Users, New Feature) */}
-        <div className="header-action-group">
-          {/* Simple Role Toggle */}
-          <div className="persona-switcher" style={{ padding: '2px' }}>
-            <button
-              className={`persona-btn ${role === 'developer' ? 'active-dev' : ''}`}
-              onClick={() => setRole(role === 'developer' ? 'all' : 'developer')}
-              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
-              title="Toggle Developer view filter"
-            >
-              <Code2 size={13} />
-              <span>Dev</span>
-            </button>
+        {/* Theme Toggle (Dark/Light mode) */}
+        <button
+          className="btn-icon"
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+          style={{ width: '32px', height: '32px' }}
+        >
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
 
-            <button
-              className={`persona-btn ${role === 'qa' ? 'active-qa' : ''}`}
-              onClick={() => setRole(role === 'qa' ? 'all' : 'qa')}
-              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
-              title="Toggle QA view filter"
-            >
-              <CheckCircle2 size={13} />
-              <span>QA</span>
-            </button>
-          </div>
+        <div style={{ width: '1px', height: '22px', background: 'var(--border-subtle)' }} />
 
-          {/* Super Admin: User Management Quick Button */}
-          {currentUser?.role === 'admin' && (
-            <button
-              className="btn btn-admin-manage"
-              onClick={() => setIsUserManagementModalOpen(true)}
-              style={{
-                fontSize: '0.82rem',
-                padding: '0.45rem 0.85rem',
-                background: 'rgba(139, 92, 246, 0.15)',
-                color: '#c084fc',
-                border: '1px solid rgba(139, 92, 246, 0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              title="Super Admin: Manage team accounts & role assignments"
-            >
-              <ShieldCheck size={15} color="#c084fc" />
-              <span>Manage Users</span>
-            </button>
-          )}
-
-          {/* Primary Action Button */}
-          <button
-            className="btn btn-primary"
-            onClick={() => setIsCreateFeatureModalOpen(true)}
-            style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
-          >
-            <Plus size={14} />
-            <span>New Feature</span>
-          </button>
-        </div>
-
-        {/* User Controls (Theme Toggle & Account Menu) */}
-        <div className="header-user-controls">
-          {/* Theme Toggle */}
-          <button
-            className="btn-icon"
-            onClick={toggleTheme}
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
-            style={{ width: '32px', height: '32px' }}
-          >
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-
-          <div className="header-divider" style={{ width: '1px', height: '22px', background: 'var(--border-subtle)', margin: '0 2px' }} />
-
-        {/* User Profile Pill & Logout Menu */}
+        {/* Current User Name Include Button */}
         <div style={{ position: 'relative' }} ref={userMenuRef}>
           <button
             type="button"
+            className={`user-profile-btn ${isUserMenuOpen ? 'open' : ''}`}
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.25rem 0.55rem',
-              borderRadius: 'var(--radius-full)',
-              background: isUserMenuOpen ? 'var(--bg-card)' : 'var(--bg-surface)',
-              border: '1px solid',
-              borderColor: isUserMenuOpen ? 'var(--accent-dev)' : 'var(--border-medium)',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              transition: 'all 0.15s ease'
-            }}
             title="Account & Persona"
           >
             <div
@@ -330,15 +250,17 @@ export default function Header() {
                 background: currentUser?.color || (currentUser?.role === 'admin' ? '#8b5cf6' : 'var(--accent-dev)'),
                 width: '24px',
                 height: '24px',
-                fontSize: '0.68rem'
+                fontSize: '0.68rem',
+                flexShrink: 0
               }}
             >
               {currentUser?.initials || 'U'}
             </div>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>
-              {currentUser?.name ? currentUser.name.split(' ')[0] : 'Engineer'}
+            <span className="user-profile-name">
+              {currentUser?.name || 'Engineer'}
             </span>
             <span
+              className="user-profile-role"
               style={{
                 fontSize: '0.62rem',
                 fontFamily: 'var(--font-mono)',
@@ -363,7 +285,8 @@ export default function Header() {
                     : currentUser?.role === 'admin'
                     ? 'rgba(139, 92, 246, 0.45)'
                     : 'var(--accent-qa-border)'
-                }`
+                }`,
+                flexShrink: 0
               }}
             >
               {currentUser?.role === 'developer' ? 'DEV' : currentUser?.role === 'admin' ? 'ADMIN' : 'QA'}
@@ -373,7 +296,8 @@ export default function Header() {
               style={{
                 transform: isUserMenuOpen ? 'rotate(180deg)' : 'none',
                 transition: 'transform 0.2s ease',
-                color: 'var(--text-muted)'
+                color: 'var(--text-muted)',
+                flexShrink: 0
               }}
             />
           </button>
@@ -547,7 +471,6 @@ export default function Header() {
               </button>
             </div>
           )}
-        </div>
         </div>
       </div>
     </header>
