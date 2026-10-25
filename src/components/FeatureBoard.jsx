@@ -12,6 +12,8 @@ import {
   FolderPlus,
   Layers,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Filter,
   Kanban as KanbanIcon,
   ListTree,
@@ -36,6 +38,8 @@ export default function FeatureBoard() {
     openEditFeatureModal,
     updateFeatureStatus,
     moveFeatureCard,
+    reorderFeatureInPhase,
+    deleteFeature,
     team,
     openCreateFeatureModal,
     setIsCreateModuleModalOpen,
@@ -114,17 +118,66 @@ export default function FeatureBoard() {
     }
   };
 
-  // Drop on column container
+  // Drag over cards wrap (intelligent edge detection for blank spaces)
+  const handleCardsWrapDragOver = (e, colId, colFeatures) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColId !== colId) {
+      setDragOverColId(colId);
+    }
+
+    if (!colFeatures || colFeatures.length === 0) {
+      setDragOverTarget((prev) => (prev ? null : prev));
+      return;
+    }
+
+    // Detect if pointer is above first card or below last card
+    const wrap = e.currentTarget;
+    const cards = wrap.querySelectorAll('.ticket-card:not(.is-dragging)');
+    if (cards.length === 0) return;
+
+    const firstCardRect = cards[0].getBoundingClientRect();
+    const lastCardRect = cards[cards.length - 1].getBoundingClientRect();
+
+    if (e.clientY < firstCardRect.top) {
+      const firstFeatId = colFeatures[0]?.id;
+      if (firstFeatId && firstFeatId !== draggedFeatId) {
+        setDragOverTarget((prev) => {
+          if (prev?.cardId === firstFeatId && prev?.position === 'before') return prev;
+          return { cardId: firstFeatId, position: 'before' };
+        });
+      }
+    } else if (e.clientY > lastCardRect.bottom) {
+      const lastFeatId = colFeatures[colFeatures.length - 1]?.id;
+      if (lastFeatId && lastFeatId !== draggedFeatId) {
+        setDragOverTarget((prev) => {
+          if (prev?.cardId === lastFeatId && prev?.position === 'after') return prev;
+          return { cardId: lastFeatId, position: 'after' };
+        });
+      }
+    }
+  };
+
+  // Drop on column container or cards wrap
   const handleColDrop = (e, targetColId) => {
     e.preventDefault();
     const featId = e.dataTransfer.getData('text/plain') || draggedFeatId;
+    const currentTarget = dragOverTarget;
     cleanupDragState();
 
     if (!featId) return;
-    if (moveFeatureCard) {
-      moveFeatureCard(featId, targetColId);
+    if (currentTarget && currentTarget.cardId && currentTarget.cardId !== featId) {
+      if (moveFeatureCard) {
+        moveFeatureCard(featId, targetColId, currentTarget.cardId, currentTarget.position || 'after');
+      } else {
+        updateFeatureStatus(featId, targetColId);
+      }
     } else {
-      updateFeatureStatus(featId, targetColId);
+      if (moveFeatureCard) {
+        moveFeatureCard(featId, targetColId);
+      } else {
+        updateFeatureStatus(featId, targetColId);
+      }
     }
   };
 
@@ -138,12 +191,21 @@ export default function FeatureBoard() {
       setDragOverColId(colId);
     }
 
-    if (targetFeatId !== draggedFeatId) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      const position = e.clientY < midY ? 'before' : 'after';
-      setDragOverTarget({ cardId: targetFeatId, position });
+    if (targetFeatId === draggedFeatId) {
+      setDragOverTarget((prev) => (prev ? null : prev));
+      return;
     }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const position = e.clientY < midY ? 'before' : 'after';
+
+    setDragOverTarget((prev) => {
+      if (prev?.cardId === targetFeatId && prev?.position === position) {
+        return prev;
+      }
+      return { cardId: targetFeatId, position };
+    });
   };
 
   // Drop on card
@@ -151,11 +213,11 @@ export default function FeatureBoard() {
     e.preventDefault();
     e.stopPropagation();
     const featId = e.dataTransfer.getData('text/plain') || draggedFeatId;
-    const position = dragOverTarget?.position || 'after';
+    const position = dragOverTarget?.cardId === targetFeatId ? dragOverTarget.position : 'after';
 
     cleanupDragState();
 
-    if (!featId) return;
+    if (!featId || featId === targetFeatId) return;
     if (moveFeatureCard) {
       moveFeatureCard(featId, colId, targetFeatId, position);
     } else {
@@ -667,6 +729,31 @@ export default function FeatureBoard() {
                                 <Edit2 size={12} />
                               </button>
 
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (
+                                    window.confirm(
+                                      `Delete feature "${feat.name}"? This will permanently remove all associated bugs and suggestions.`
+                                    )
+                                  ) {
+                                    deleteFeature(feat.id);
+                                  }
+                                }}
+                                title="Delete Feature"
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  color: 'var(--status-critical)',
+                                  background: 'rgba(244, 63, 94, 0.1)',
+                                  border: '1px solid var(--status-critical-border)'
+                                }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+
                               <ChevronRight size={14} color="var(--text-muted)" />
                             </div>
                           </div>
@@ -760,6 +847,8 @@ export default function FeatureBoard() {
                 <div
                   className="kanban-cards-wrap"
                   style={{ padding: '0.75rem', gap: '0.75rem', minHeight: '380px' }}
+                  onDragOver={(e) => handleCardsWrapDragOver(e, col.id, colFeatures)}
+                  onDrop={(e) => handleColDrop(e, col.id)}
                 >
                   {colFeatures.length === 0 ? (
                     <div
@@ -777,7 +866,7 @@ export default function FeatureBoard() {
                       {isOverCol ? 'Drop card here' : 'No features'}
                     </div>
                   ) : (
-                    colFeatures.map((feat) => {
+                    colFeatures.map((feat, featIndex) => {
                       const dev = team.find((m) => m.id === feat.assignedDev);
                       const qa = team.find((m) => m.id === feat.assignedQa);
 
@@ -822,10 +911,90 @@ export default function FeatureBoard() {
                         >
                           {/* Module Badge & Code */}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                              <span className="drag-grip-handle" title="Drag to move card">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                              <span className="drag-grip-handle" title="Drag to move or reorder card">
                                 <GripVertical size={14} />
                               </span>
+
+                              {/* In-phase reorder up/down buttons */}
+                              {colFeatures.length > 1 && (
+                                <div
+                                  style={{
+                                    display: 'inline-flex',
+                                    flexDirection: 'column',
+                                    gap: '1px'
+                                  }}
+                                  title="Change order within phase"
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={featIndex === 0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (reorderFeatureInPhase) {
+                                        reorderFeatureInPhase(feat.id, 'up');
+                                      }
+                                    }}
+                                    title={featIndex === 0 ? 'Top of column' : 'Move up in order'}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      padding: 0,
+                                      lineHeight: 1,
+                                      cursor: featIndex === 0 ? 'not-allowed' : 'pointer',
+                                      opacity: featIndex === 0 ? 0.25 : 0.7,
+                                      color: 'var(--text-muted)',
+                                      display: 'flex',
+                                      alignItems: 'center'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (featIndex !== 0) e.currentTarget.style.color = 'var(--accent-dev)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.color = 'var(--text-muted)';
+                                    }}
+                                  >
+                                    <ChevronUp size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={featIndex === colFeatures.length - 1}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (reorderFeatureInPhase) {
+                                        reorderFeatureInPhase(feat.id, 'down');
+                                      }
+                                    }}
+                                    title={
+                                      featIndex === colFeatures.length - 1
+                                        ? 'Bottom of column'
+                                        : 'Move down in order'
+                                    }
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      padding: 0,
+                                      lineHeight: 1,
+                                      cursor:
+                                        featIndex === colFeatures.length - 1 ? 'not-allowed' : 'pointer',
+                                      opacity: featIndex === colFeatures.length - 1 ? 0.25 : 0.7,
+                                      color: 'var(--text-muted)',
+                                      display: 'flex',
+                                      alignItems: 'center'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (featIndex !== colFeatures.length - 1)
+                                        e.currentTarget.style.color = 'var(--accent-dev)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.color = 'var(--text-muted)';
+                                    }}
+                                  >
+                                    <ChevronDown size={11} />
+                                  </button>
+                                </div>
+                              )}
+
                               <span
                                 style={{
                                   fontFamily: 'var(--font-mono)',
@@ -858,7 +1027,7 @@ export default function FeatureBoard() {
                               )}
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                               {/* Release Pill */}
                               {feat.targetRelease && (
                                 <span
@@ -894,6 +1063,40 @@ export default function FeatureBoard() {
                                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                               >
                                 <Edit2 size={11} />
+                              </button>
+
+                              {/* Delete Feature Button */}
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (
+                                    window.confirm(
+                                      `Delete feature "${feat.name}"? This will permanently remove all associated bugs and suggestions.`
+                                    )
+                                  ) {
+                                    deleteFeature(feat.id);
+                                  }
+                                }}
+                                title="Delete Feature"
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  padding: '2px',
+                                  color: 'var(--text-muted)',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderRadius: '4px'
+                                }}
+                                onMouseEnter={(e) =>
+                                  (e.currentTarget.style.color = 'var(--status-critical)')
+                                }
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.color = 'var(--text-muted)')
+                                }
+                              >
+                                <Trash2 size={11} />
                               </button>
                             </div>
                           </div>

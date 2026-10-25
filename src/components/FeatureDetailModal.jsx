@@ -41,6 +41,7 @@ export default function FeatureDetailModal() {
     openFeature,
     openCreateFeatureModal,
     updateFeatureModule,
+    deleteFeature,
     team
   } = useApp();
 
@@ -193,6 +194,36 @@ export default function FeatureDetailModal() {
             >
               <Edit2 size={13} />
               <span>Edit Feature</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete feature "${selectedFeature.name}"? This will permanently remove all associated bugs and suggestions.`
+                  )
+                ) {
+                  deleteFeature(selectedFeature.id);
+                  closeFeature();
+                }
+              }}
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.35rem 0.75rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                color: 'var(--status-critical)',
+                background: 'rgba(244, 63, 94, 0.1)',
+                border: '1px solid var(--status-critical-border)',
+                cursor: 'pointer'
+              }}
+              title="Delete Feature"
+            >
+              <Trash2 size={13} />
+              <span>Delete Feature</span>
             </button>
 
             <button className="btn-icon" onClick={closeFeature} type="button">

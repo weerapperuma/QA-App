@@ -232,6 +232,16 @@ export function subscribeFeatures(onFeaturesUpdate, fallbackFeatures = []) {
         features.push({ id: docSnap.id, ...docSnap.data() });
       });
 
+      // Preserve drag-and-drop order in Firestore snapshots
+      features.sort((a, b) => {
+        if (typeof a.order === 'number' && typeof b.order === 'number') {
+          return a.order - b.order;
+        }
+        if (typeof a.order === 'number') return -1;
+        if (typeof b.order === 'number') return 1;
+        return 0;
+      });
+
       onFeaturesUpdate(features);
     },
     (err) => {
@@ -254,6 +264,29 @@ export async function saveFeatureToFirestore(feature) {
     return { success: true };
   } catch (err) {
     console.error('saveFeatureToFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveFeaturesOrderToFirestore(featuresToUpdate) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    for (const feat of featuresToUpdate) {
+      const featRef = doc(firestoreDb, 'features', feat.id);
+      await setDoc(
+        featRef,
+        cleanForFirestore({
+          ...feat,
+          order: feat.order,
+          updatedAt: new Date().toISOString()
+        }),
+        { merge: true }
+      );
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('saveFeaturesOrderToFirestore error:', err);
     return { success: false, error: err.message };
   }
 }

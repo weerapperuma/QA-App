@@ -25,6 +25,7 @@ import {
   saveProjectToFirestore,
   subscribeFeatures,
   saveFeatureToFirestore,
+  saveFeaturesOrderToFirestore,
   deleteFeatureFromFirestore,
   subscribeModules,
   saveModuleToFirestore,
@@ -117,7 +118,11 @@ export function AppProvider({ children }) {
   const [features, setFeatures] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.FEATURES);
-      return saved ? JSON.parse(saved) : INITIAL_FEATURES;
+      const parsed = saved ? JSON.parse(saved) : INITIAL_FEATURES;
+      return (parsed || []).map((f, idx) => ({
+        ...f,
+        order: typeof f.order === 'number' ? f.order : (idx + 1) * 1000
+      }));
     } catch {
       return INITIAL_FEATURES;
     }
@@ -519,9 +524,18 @@ export function AppProvider({ children }) {
     INITIAL_PROJECTS[0];
 
   // ONLY actual features belong in projectFeatures (NOT modules!)
-  const projectFeatures = (features || []).filter(
-    (f) => f.projectId === (activeProject?.id || 'proj-erp') && !f.isMainModule && f.status !== 'module'
-  );
+  const projectFeatures = (features || [])
+    .filter(
+      (f) => f.projectId === (activeProject?.id || 'proj-erp') && !f.isMainModule && f.status !== 'module'
+    )
+    .sort((a, b) => {
+      if (typeof a.order === 'number' && typeof b.order === 'number') {
+        return a.order - b.order;
+      }
+      if (typeof a.order === 'number') return -1;
+      if (typeof b.order === 'number') return 1;
+      return 0;
+    });
 
   // Modules belonging to this active project
   const projectModules = (modules || []).filter(
@@ -786,13 +800,17 @@ export function AppProvider({ children }) {
 
     const nextCount = projectFeatures.length + 101;
     const cleanCode = featData.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'FEAT';
+    const targetStatus = featData.status || 'in_dev';
+    const colFeatures = projectFeatures.filter((f) => f.status === targetStatus);
+    const maxOrder = colFeatures.reduce((max, f) => Math.max(max, f.order || 0), 0);
     const newFeature = {
       id: `FEAT-${nextCount}-${Date.now().toString(36).substring(2, 5)}`,
       projectId: activeProjectId,
       code: `${activeProject.code}-${cleanCode}`,
       name: featData.name.trim(),
       description: featData.description || '',
-      status: featData.status || 'in_dev',
+      status: targetStatus,
+      order: maxOrder + 1000,
       isMainModule: false,
       moduleName: moduleName || 'General',
       assignedDev: featData.assignedDev || defaultDev,
@@ -891,14 +909,21 @@ export function AppProvider({ children }) {
   };
 
   const deleteFeature = async (featureId) => {
+    const feat = features.find((f) => f.id === featureId);
+    const featName = feat ? feat.name : 'Feature';
+
     setFeatures((prev) => prev.filter((f) => f.id !== featureId));
     if (selectedFeatureId === featureId) {
       setSelectedFeatureId(null);
     }
+    if (editingFeature && editingFeature.id === featureId) {
+      setIsEditFeatureModalOpen(false);
+      setEditingFeature(null);
+    }
     if (firebaseStatus === 'connected') {
       await deleteFeatureFromFirestore(featureId);
     }
-    addToast('Feature removed.', 'info');
+    addToast(`Feature "${featName}" was deleted.`, 'info', 'Feature Deleted');
   };
 
   // Feature Status Transitions (In Dev -> Ready for Retest -> QA Verification -> Verified)
@@ -963,6 +988,11 @@ export function AppProvider({ children }) {
     const oldStatus = feat.status;
     const isStatusChanged = oldStatus !== targetStatus;
 
+    // Dropping on itself in the same phase is a no-op
+    if (targetFeatureId === featureId && !isStatusChanged) {
+      return;
+    }
+
     if (isStatusChanged) {
       if (targetStatus === 'ready_for_qa') {
         addToast(
@@ -995,26 +1025,113 @@ export function AppProvider({ children }) {
       }
     }
 
-    const updatedItem = { ...feat, status: targetStatus, updatedAt: new Date().toISOString() };
+    const updatedItem = {
+      ...feat,
+      status: targetStatus,
+      updatedAt: new Date().toISOString()
+    };
+
+    let updatedProjectFeatures = [];
 
     setFeatures((prev) => {
-      const remaining = prev.filter((f) => f.id !== featureId);
+      // 1. Separate current project's features from others
+      const otherProjectFeatures = prev.filter(
+        (f) => f.projectId !== feat.projectId || f.isMainModule
+      );
+      const currentProjFeatures = prev
+        .filter((f) => f.projectId === feat.projectId && !f.isMainModule)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      // 2. Target column features without the dragged item
+      const targetColFeatures = currentProjFeatures.filter(
+        (f) => f.id !== featureId && f.status === targetStatus
+      );
+
+      // 3. Determine new order for the target column
+      let newColOrder = [];
       if (!targetFeatureId || targetFeatureId === featureId) {
-        return [...remaining, updatedItem];
+        newColOrder = [...targetColFeatures, updatedItem];
+      } else {
+        const targetIdx = targetColFeatures.findIndex((f) => f.id === targetFeatureId);
+        if (targetIdx === -1) {
+          newColOrder = [...targetColFeatures, updatedItem];
+        } else {
+          const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
+          newColOrder = [...targetColFeatures];
+          newColOrder.splice(insertIdx, 0, updatedItem);
+        }
       }
-      const targetIdx = remaining.findIndex((f) => f.id === targetFeatureId);
-      if (targetIdx === -1) {
-        return [...remaining, updatedItem];
+
+      // 4. Other columns in this project
+      const otherColsFeatures = currentProjFeatures.filter(
+        (f) => f.id !== featureId && f.status !== targetStatus
+      );
+
+      // 5. Combine and normalize order values across the project
+      const allThisProj = [...otherColsFeatures, ...newColOrder];
+      const COL_KEYS = ['in_dev', 'ready_for_qa', 'in_qa', 'verified'];
+      let finalThisProj = [];
+      let baseOrder = 1000;
+
+      for (const colKey of COL_KEYS) {
+        const colFeats =
+          colKey === targetStatus
+            ? newColOrder
+            : allThisProj
+                .filter((f) => f.status === colKey)
+                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+        colFeats.forEach((f) => {
+          finalThisProj.push({
+            ...f,
+            order: baseOrder
+          });
+          baseOrder += 1000;
+        });
       }
-      const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
-      const nextList = [...remaining];
-      nextList.splice(insertIdx, 0, updatedItem);
-      return nextList;
+
+      const remainingUnmapped = allThisProj.filter((f) => !COL_KEYS.includes(f.status));
+      remainingUnmapped.forEach((f) => {
+        finalThisProj.push({ ...f, order: baseOrder });
+        baseOrder += 1000;
+      });
+
+      updatedProjectFeatures = finalThisProj;
+      return [...otherProjectFeatures, ...finalThisProj];
     });
 
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(updatedItem);
+      if (updatedProjectFeatures.length > 0) {
+        saveFeaturesOrderToFirestore(updatedProjectFeatures);
+      }
     }
+  };
+
+  // Reorder Feature by 1 step up or down within its current phase
+  const reorderFeatureInPhase = async (featureId, direction) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return;
+
+    const statusFeatures = (features || [])
+      .filter((f) => f.projectId === feat.projectId && !f.isMainModule && f.status === feat.status)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    const currentIndex = statusFeatures.findIndex((f) => f.id === featureId);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= statusFeatures.length) {
+      return;
+    }
+
+    const swapTargetFeat = statusFeatures[targetIndex];
+    await moveFeatureCard(
+      featureId,
+      feat.status,
+      swapTargetFeat.id,
+      direction === 'up' ? 'before' : 'after'
+    );
   };
 
   // Add Bug directly to Feature (filed by QA during testing)
@@ -1755,6 +1872,7 @@ export function AppProvider({ children }) {
         closeEditFeatureModal,
         updateFeatureStatus,
         moveFeatureCard,
+        reorderFeatureInPhase,
         addBugToFeature,
         updateFeatureBugStatus,
         updateFeatureBug,
