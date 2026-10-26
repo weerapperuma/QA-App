@@ -58,6 +58,43 @@ const STORAGE_KEYS = {
   THEME: 'devbridge_theme'
 };
 
+// Helper to deduplicate features, bugs, and suggestions
+const sanitizeFeatures = (featList) => {
+  if (!Array.isArray(featList)) return [];
+  const featMap = new Map();
+
+  featList.forEach((feat, idx) => {
+    if (!feat || !feat.id) return;
+    const featId = feat.id;
+
+    // Deduplicate bugs by b.id
+    const bugMap = new Map();
+    (feat.bugs || []).forEach((b) => {
+      if (b && b.id) {
+        bugMap.set(b.id, b);
+      }
+    });
+
+    // Deduplicate suggestions by s.id
+    const suggMap = new Map();
+    (feat.suggestions || []).forEach((s) => {
+      if (s && s.id) {
+        suggMap.set(s.id, s);
+      }
+    });
+
+    featMap.set(featId, {
+      ...feat,
+      id: featId,
+      order: typeof feat.order === 'number' ? feat.order : (idx + 1) * 1000,
+      bugs: Array.from(bugMap.values()),
+      suggestions: Array.from(suggMap.values())
+    });
+  });
+
+  return Array.from(featMap.values());
+};
+
 export function AppProvider({ children }) {
   // Firebase Configuration & Live Status
   const [firebaseConfig, setFirebaseConfig] = useState(() => getFirebaseConfig());
@@ -119,12 +156,9 @@ export function AppProvider({ children }) {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.FEATURES);
       const parsed = saved ? JSON.parse(saved) : INITIAL_FEATURES;
-      return (parsed || []).map((f, idx) => ({
-        ...f,
-        order: typeof f.order === 'number' ? f.order : (idx + 1) * 1000
-      }));
+      return sanitizeFeatures(parsed);
     } catch {
-      return INITIAL_FEATURES;
+      return sanitizeFeatures(INITIAL_FEATURES);
     }
   });
 
@@ -286,7 +320,7 @@ export function AppProvider({ children }) {
       // 3. Features
       const unsubFeatures = subscribeFeatures((firestoreFeatures) => {
         if (firestoreFeatures) {
-          setFeatures(firestoreFeatures);
+          setFeatures(sanitizeFeatures(firestoreFeatures));
         }
       }, INITIAL_FEATURES);
 
@@ -524,18 +558,29 @@ export function AppProvider({ children }) {
     INITIAL_PROJECTS[0];
 
   // ONLY actual features belong in projectFeatures (NOT modules!)
-  const projectFeatures = (features || [])
-    .filter(
-      (f) => f.projectId === (activeProject?.id || 'proj-erp') && !f.isMainModule && f.status !== 'module'
-    )
-    .sort((a, b) => {
-      if (typeof a.order === 'number' && typeof b.order === 'number') {
-        return a.order - b.order;
+  const uniqueProjectFeaturesMap = new Map();
+  (features || []).forEach((f) => {
+    if (
+      f &&
+      f.id &&
+      f.projectId === (activeProject?.id || 'proj-erp') &&
+      !f.isMainModule &&
+      f.status !== 'module'
+    ) {
+      if (!uniqueProjectFeaturesMap.has(f.id)) {
+        uniqueProjectFeaturesMap.set(f.id, f);
       }
-      if (typeof a.order === 'number') return -1;
-      if (typeof b.order === 'number') return 1;
-      return 0;
-    });
+    }
+  });
+
+  const projectFeatures = Array.from(uniqueProjectFeaturesMap.values()).sort((a, b) => {
+    if (typeof a.order === 'number' && typeof b.order === 'number') {
+      return a.order - b.order;
+    }
+    if (typeof a.order === 'number') return -1;
+    if (typeof b.order === 'number') return 1;
+    return 0;
+  });
 
   // Modules belonging to this active project
   const projectModules = (modules || []).filter(
@@ -588,11 +633,16 @@ export function AppProvider({ children }) {
 
   const selectedFeature = (features || []).find((f) => f.id === selectedFeatureId) || null;
   const selectedTicket = (tickets || []).find((t) => t.id === selectedTicketId) || null;
-  // All bugs & suggestions linked to features in the active project
-  const allFeatureDefects = [];
+
+  // All bugs & suggestions linked to features in the active project (guaranteed unique by composite key)
+  const defectMap = new Map();
   projectFeatures.forEach((feat) => {
+    const seenBugIdsInFeat = new Set();
     (feat.bugs || []).forEach((bug) => {
-      allFeatureDefects.push({
+      if (!bug || !bug.id || seenBugIdsInFeat.has(bug.id)) return;
+      seenBugIdsInFeat.add(bug.id);
+      const compositeKey = `${feat.id}::bug::${bug.id}`;
+      defectMap.set(compositeKey, {
         ...bug,
         type: 'bug',
         featureId: feat.id,
@@ -603,8 +653,13 @@ export function AppProvider({ children }) {
         environment: feat.environment || 'staging'
       });
     });
+
+    const seenSuggIdsInFeat = new Set();
     (feat.suggestions || []).forEach((sugg) => {
-      allFeatureDefects.push({
+      if (!sugg || !sugg.id || seenSuggIdsInFeat.has(sugg.id)) return;
+      seenSuggIdsInFeat.add(sugg.id);
+      const compositeKey = `${feat.id}::sugg::${sugg.id}`;
+      defectMap.set(compositeKey, {
         ...sugg,
         type: 'suggestion',
         severity: sugg.priority || 'Medium',
@@ -617,6 +672,7 @@ export function AppProvider({ children }) {
       });
     });
   });
+  const allFeatureDefects = Array.from(defectMap.values());
 
   // Project Actions
   const createProject = async (projectData) => {
@@ -799,14 +855,22 @@ export function AppProvider({ children }) {
     }
 
     const nextCount = projectFeatures.length + 101;
-    const cleanCode = featData.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'FEAT';
+    const rawClean = featData.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'FEAT';
+    let cleanCode = rawClean;
+    let candidateCode = `${activeProject.code}-${cleanCode}`;
+    let codeCounter = 2;
+    while ((features || []).some((f) => f.code === candidateCode)) {
+      cleanCode = `${rawClean.substring(0, 3)}${codeCounter}`;
+      candidateCode = `${activeProject.code}-${cleanCode}`;
+      codeCounter++;
+    }
     const targetStatus = featData.status || 'in_dev';
     const colFeatures = projectFeatures.filter((f) => f.status === targetStatus);
     const maxOrder = colFeatures.reduce((max, f) => Math.max(max, f.order || 0), 0);
     const newFeature = {
       id: `FEAT-${nextCount}-${Date.now().toString(36).substring(2, 5)}`,
       projectId: activeProjectId,
-      code: `${activeProject.code}-${cleanCode}`,
+      code: candidateCode,
       name: featData.name.trim(),
       description: featData.description || '',
       status: targetStatus,
@@ -1139,11 +1203,33 @@ export function AppProvider({ children }) {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
 
-    const bugCount = (feat.bugs || []).length + 1;
+    // Prevent duplicate rapid submissions (double-click debounce)
+    const isDuplicate = (feat.bugs || []).some(
+      (b) =>
+        b.title.trim().toLowerCase() === (bugData.title || '').trim().toLowerCase() &&
+        Math.abs(Date.now() - new Date(b.createdAt || 0).getTime()) < 5000
+    );
+    if (isDuplicate) {
+      addToast('This defect was just logged a moment ago.', 'warning');
+      return;
+    }
+
+    const existingIds = (feat.bugs || []).map((b) => {
+      const match = (b.id || '').match(/-(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    });
+    const nextBugNum = (existingIds.length > 0 ? Math.max(...existingIds, 0) : 0) + 1;
+    let bugId = `BUG-${feat.code || 'FEAT'}-${nextBugNum}`;
+    let bump = nextBugNum;
+    while ((feat.bugs || []).some((b) => b.id === bugId)) {
+      bump++;
+      bugId = `BUG-${feat.code || 'FEAT'}-${bump}`;
+    }
+
     const defaultDev = feat.assignedDev || (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
     const defaultQa = (currentUser && currentUser.id) || (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
     const newBug = {
-      id: `BUG-${feat.code || 'FEAT'}-${bugCount}`,
+      id: bugId,
       title: bugData.title,
       severity: bugData.severity || 'Medium',
       status: 'open',
@@ -1155,9 +1241,16 @@ export function AppProvider({ children }) {
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
     };
 
+    const seenBugs = new Set();
+    const updatedBugs = [newBug, ...(feat.bugs || [])].filter((b) => {
+      if (!b || !b.id || seenBugs.has(b.id)) return false;
+      seenBugs.add(b.id);
+      return true;
+    });
+
     const updatedFeature = {
       ...feat,
-      bugs: [newBug, ...(feat.bugs || [])],
+      bugs: updatedBugs,
       updatedAt: new Date().toISOString()
     };
 
@@ -1198,9 +1291,17 @@ export function AppProvider({ children }) {
       addToast(`Defect [${bugId}] moved to Need Dev.`, 'info');
     }
 
-    const updatedBugs = (feat.bugs || []).map((b) =>
-      b.id === bugId ? { ...b, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : b
-    );
+    const seenIds = new Set();
+    const updatedBugs = (feat.bugs || [])
+      .filter((b) => {
+        if (!b || !b.id || seenIds.has(b.id)) return false;
+        seenIds.add(b.id);
+        return true;
+      })
+      .map((b) =>
+        b.id === bugId ? { ...b, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : b
+      );
+
     const updatedFeature = {
       ...feat,
       bugs: updatedBugs,
@@ -1269,10 +1370,32 @@ export function AppProvider({ children }) {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
 
-    const suggCount = (feat.suggestions || []).length + 1;
+    // Prevent duplicate rapid submissions (double-click debounce)
+    const isDuplicate = (feat.suggestions || []).some(
+      (s) =>
+        s.title.trim().toLowerCase() === (suggData.title || '').trim().toLowerCase() &&
+        Math.abs(Date.now() - new Date(s.createdAt || 0).getTime()) < 5000
+    );
+    if (isDuplicate) {
+      addToast('This suggestion was just logged a moment ago.', 'warning');
+      return;
+    }
+
+    const existingIds = (feat.suggestions || []).map((s) => {
+      const match = (s.id || '').match(/-(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    });
+    const nextSuggNum = (existingIds.length > 0 ? Math.max(...existingIds, 0) : 0) + 1;
+    let suggId = `SUGG-${feat.code || 'FEAT'}-${nextSuggNum}`;
+    let bump = nextSuggNum;
+    while ((feat.suggestions || []).some((s) => s.id === suggId)) {
+      bump++;
+      suggId = `SUGG-${feat.code || 'FEAT'}-${bump}`;
+    }
+
     const author = (currentUser && currentUser.id) || (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
     const newSugg = {
-      id: `SUGG-${feat.code || 'FEAT'}-${suggCount}`,
+      id: suggId,
       title: suggData.title,
       priority: suggData.priority || 'Medium',
       status: 'open',
@@ -1281,9 +1404,16 @@ export function AppProvider({ children }) {
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
     };
 
+    const seenSuggs = new Set();
+    const updatedSuggestions = [newSugg, ...(feat.suggestions || [])].filter((s) => {
+      if (!s || !s.id || seenSuggs.has(s.id)) return false;
+      seenSuggs.add(s.id);
+      return true;
+    });
+
     const updatedFeature = {
       ...feat,
-      suggestions: [newSugg, ...(feat.suggestions || [])],
+      suggestions: updatedSuggestions,
       updatedAt: new Date().toISOString()
     };
 
@@ -1323,9 +1453,17 @@ export function AppProvider({ children }) {
       addToast(`Suggestion [${suggId}] moved to Need Dev.`, 'info');
     }
 
-    const updatedSuggs = (feat.suggestions || []).map((s) =>
-      s.id === suggId ? { ...s, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : s
-    );
+    const seenIds = new Set();
+    const updatedSuggs = (feat.suggestions || [])
+      .filter((s) => {
+        if (!s || !s.id || seenIds.has(s.id)) return false;
+        seenIds.add(s.id);
+        return true;
+      })
+      .map((s) =>
+        s.id === suggId ? { ...s, status: newStatus, ...extraData, updatedAt: new Date().toISOString() } : s
+      );
+
     const updatedFeature = {
       ...feat,
       suggestions: updatedSuggs,
@@ -1400,8 +1538,14 @@ export function AppProvider({ children }) {
     if (fromType === 'bug' && toType === 'suggestion') {
       const existingBug = updatedBugs.find((b) => b.id === itemId) || {};
       updatedBugs = updatedBugs.filter((b) => b.id !== itemId);
+      let targetId = itemId.startsWith('BUG-') ? itemId.replace('BUG-', 'SUGG-') : itemId;
+      let counter = 2;
+      while (updatedSuggs.some((s) => s.id === targetId)) {
+        targetId = `${targetId}-${counter}`;
+        counter++;
+      }
       const newSuggestion = {
-        id: itemId.startsWith('BUG-') ? itemId.replace('BUG-', 'SUGG-') : itemId,
+        id: targetId,
         title: updatedData.title || existingBug.title || 'Untitled Suggestion',
         priority: updatedData.priority || updatedData.severity || existingBug.severity || 'Medium',
         notes: updatedData.notes || updatedData.reproSteps || existingBug.reproSteps || '',
@@ -1411,12 +1555,23 @@ export function AppProvider({ children }) {
         createdAt: existingBug.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      updatedSuggs = [newSuggestion, ...updatedSuggs];
+      const seenSuggs = new Set();
+      updatedSuggs = [newSuggestion, ...updatedSuggs].filter((s) => {
+        if (!s || !s.id || seenSuggs.has(s.id)) return false;
+        seenSuggs.add(s.id);
+        return true;
+      });
     } else if (fromType === 'suggestion' && toType === 'bug') {
       const existingSugg = updatedSuggs.find((s) => s.id === itemId) || {};
       updatedSuggs = updatedSuggs.filter((s) => s.id !== itemId);
+      let targetId = itemId.startsWith('SUGG-') ? itemId.replace('SUGG-', 'BUG-') : itemId;
+      let counter = 2;
+      while (updatedBugs.some((b) => b.id === targetId)) {
+        targetId = `${targetId}-${counter}`;
+        counter++;
+      }
       const newBug = {
-        id: itemId.startsWith('SUGG-') ? itemId.replace('SUGG-', 'BUG-') : itemId,
+        id: targetId,
         title: updatedData.title || existingSugg.title || 'Untitled Defect',
         severity: updatedData.severity || updatedData.priority || existingSugg.priority || 'Medium',
         reproSteps: updatedData.reproSteps || updatedData.notes || existingSugg.notes || '',
@@ -1427,7 +1582,12 @@ export function AppProvider({ children }) {
         createdAt: existingSugg.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      updatedBugs = [newBug, ...updatedBugs];
+      const seenBugs = new Set();
+      updatedBugs = [newBug, ...updatedBugs].filter((b) => {
+        if (!b || !b.id || seenBugs.has(b.id)) return false;
+        seenBugs.add(b.id);
+        return true;
+      });
     }
 
     const updatedFeature = {

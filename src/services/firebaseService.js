@@ -227,10 +227,38 @@ export function subscribeFeatures(onFeaturesUpdate, fallbackFeatures = []) {
         return;
       }
 
-      const features = [];
+      const featureMap = new Map();
       snapshot.forEach((docSnap) => {
-        features.push({ id: docSnap.id, ...docSnap.data() });
+        const raw = docSnap.data();
+        const featId = raw.id || docSnap.id;
+
+        // Deduplicate bugs within this feature
+        const bugMap = new Map();
+        (raw.bugs || []).forEach((b) => {
+          if (b && b.id) {
+            bugMap.set(b.id, b);
+          }
+        });
+
+        // Deduplicate suggestions within this feature
+        const suggMap = new Map();
+        (raw.suggestions || []).forEach((s) => {
+          if (s && s.id) {
+            suggMap.set(s.id, s);
+          }
+        });
+
+        const sanitized = {
+          ...raw,
+          id: featId,
+          bugs: Array.from(bugMap.values()),
+          suggestions: Array.from(suggMap.values())
+        };
+
+        featureMap.set(featId, sanitized);
       });
+
+      const features = Array.from(featureMap.values());
 
       // Preserve drag-and-drop order in Firestore snapshots
       features.sort((a, b) => {

@@ -59,6 +59,9 @@ export default function FeatureDetailModal() {
   const [suggPriority, setSuggPriority] = useState('High');
   const [suggNotes, setSuggNotes] = useState('');
 
+  const [isSubmittingBug, setIsSubmittingBug] = useState(false);
+  const [isSubmittingSugg, setIsSubmittingSugg] = useState(false);
+
   // Dev handoff state
   const [showHandoffBox, setShowHandoffBox] = useState(false);
   const [handoffBuild, setHandoffBuild] = useState('#413');
@@ -82,38 +85,48 @@ export default function FeatureDetailModal() {
     ? allModuleNames
     : Array.from(new Set(projectFeatures.map((f) => f.moduleName).filter(Boolean)));
 
-  const handleAddBugSubmit = (e) => {
+  const handleAddBugSubmit = async (e) => {
     e.preventDefault();
-    if (!bugTitle.trim()) return;
+    if (isSubmittingBug || !bugTitle.trim()) return;
 
-    addBugToFeature(selectedFeature.id, {
-      title: bugTitle,
-      severity: bugSeverity,
-      reproSteps: bugRepro,
-      expectedResult: bugExpected,
-      actualResult: bugActual
-    });
+    setIsSubmittingBug(true);
+    try {
+      await addBugToFeature(selectedFeature.id, {
+        title: bugTitle.trim(),
+        severity: bugSeverity,
+        reproSteps: bugRepro.trim(),
+        expectedResult: bugExpected.trim(),
+        actualResult: bugActual.trim()
+      });
 
-    setBugTitle('');
-    setBugRepro('');
-    setBugExpected('');
-    setBugActual('');
-    setShowAddBugForm(false);
+      setBugTitle('');
+      setBugRepro('');
+      setBugExpected('');
+      setBugActual('');
+      setShowAddBugForm(false);
+    } finally {
+      setIsSubmittingBug(false);
+    }
   };
 
-  const handleAddSuggSubmit = (e) => {
+  const handleAddSuggSubmit = async (e) => {
     e.preventDefault();
-    if (!suggTitle.trim()) return;
+    if (isSubmittingSugg || !suggTitle.trim()) return;
 
-    addSuggestionToFeature(selectedFeature.id, {
-      title: suggTitle,
-      priority: suggPriority,
-      notes: suggNotes
-    });
+    setIsSubmittingSugg(true);
+    try {
+      await addSuggestionToFeature(selectedFeature.id, {
+        title: suggTitle.trim(),
+        priority: suggPriority,
+        notes: suggNotes.trim()
+      });
 
-    setSuggTitle('');
-    setSuggNotes('');
-    setShowAddSuggForm(false);
+      setSuggTitle('');
+      setSuggNotes('');
+      setShowAddSuggForm(false);
+    } finally {
+      setIsSubmittingSugg(false);
+    }
   };
 
   const handleHandoffSubmit = (e) => {
@@ -494,9 +507,10 @@ export default function FeatureDetailModal() {
                     <button
                       type="submit"
                       className="btn btn-primary"
+                      disabled={isSubmittingBug}
                       style={{ fontSize: '0.8rem' }}
                     >
-                      Save Bug & Notify Dev
+                      {isSubmittingBug ? 'Saving...' : 'Save Bug & Notify Dev'}
                     </button>
                   </div>
                 </form>
@@ -796,9 +810,10 @@ export default function FeatureDetailModal() {
                     <button
                       type="submit"
                       className="btn btn-primary"
+                      disabled={isSubmittingSugg}
                       style={{ fontSize: '0.8rem' }}
                     >
-                      Save Suggestion
+                      {isSubmittingSugg ? 'Saving...' : 'Save Suggestion'}
                     </button>
                   </div>
                 </form>

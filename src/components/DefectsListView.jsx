@@ -51,6 +51,7 @@ export default function DefectsListView() {
   const [priority, setPriority] = useState('High');
   const [reproSteps, setReproSteps] = useState('');
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Dev Fixed Note Modal state
   const [isDevFixedModalOpen, setIsDevFixedModalOpen] = useState(false);
@@ -160,28 +161,33 @@ export default function DefectsListView() {
   const openCount = filteredItems.filter((d) => normalizeStatus(d.status) !== 'verified').length;
 
   // Add Item
-  const handleAddItem = (e) => {
+  const handleAddItem = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !targetFeatureId) return;
+    if (isSubmitting || !title.trim() || !targetFeatureId) return;
 
-    if (itemType === 'bug') {
-      addBugToFeature(targetFeatureId, {
-        title: title.trim(),
-        severity,
-        reproSteps: reproSteps.trim()
-      });
-    } else {
-      addSuggestionToFeature(targetFeatureId, {
-        title: title.trim(),
-        priority,
-        notes: notes.trim()
-      });
+    setIsSubmitting(true);
+    try {
+      if (itemType === 'bug') {
+        await addBugToFeature(targetFeatureId, {
+          title: title.trim(),
+          severity,
+          reproSteps: reproSteps.trim()
+        });
+      } else {
+        await addSuggestionToFeature(targetFeatureId, {
+          title: title.trim(),
+          priority,
+          notes: notes.trim()
+        });
+      }
+
+      setTitle('');
+      setReproSteps('');
+      setNotes('');
+      setIsAddModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setTitle('');
-    setReproSteps('');
-    setNotes('');
-    setIsAddModalOpen(false);
   };
 
   // Workflow Action Handlers
@@ -1190,8 +1196,8 @@ export default function DefectsListView() {
                 <button type="button" className="btn btn-secondary" onClick={() => setIsAddModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  <span>Save to Feature</span>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  <span>{isSubmitting ? 'Saving...' : 'Save to Feature'}</span>
                 </button>
               </div>
             </form>
