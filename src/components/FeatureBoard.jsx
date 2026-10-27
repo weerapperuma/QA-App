@@ -256,7 +256,7 @@ export default function FeatureBoard() {
   };
 
   return (
-    <div>
+    <div className="feature-board-view">
       {/* Top Title & Actions Bar */}
       <div
         className="feature-top-bar"
@@ -264,9 +264,10 @@ export default function FeatureBoard() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '1rem',
+          marginBottom: '0.6rem',
           flexWrap: 'wrap',
-          gap: '0.75rem'
+          gap: '0.65rem',
+          flexShrink: 0
         }}
       >
         <div>
@@ -394,13 +395,14 @@ export default function FeatureBoard() {
 
       {/* Module Navigation & Filter Bar */}
       <div
+        className="module-filter-bar"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
-          marginBottom: '1.25rem',
-          overflowX: 'auto',
-          paddingBottom: '0.3rem'
+          gap: '0.4rem',
+          marginBottom: '0.75rem',
+          flexWrap: 'wrap',
+          flexShrink: 0
         }}
       >
         <span
@@ -478,7 +480,7 @@ export default function FeatureBoard() {
 
       {/* VIEW 1: MODULES & FEATURES LIST VIEW */}
       {viewMode === 'modules' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="modules-list-view" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           {distinctModuleNames.length === 0 ? (
             <div
               style={{
@@ -815,12 +817,14 @@ export default function FeatureBoard() {
               >
                 {/* Header */}
                 <div
+                  className="kanban-col-header"
                   style={{
-                    padding: '0.85rem 1rem',
+                    padding: '0.65rem 0.85rem',
                     borderBottom: '1px solid var(--border-subtle)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between'
+                    justifyContent: 'space-between',
+                    flexShrink: 0
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -846,14 +850,13 @@ export default function FeatureBoard() {
                 {/* Cards Wrap */}
                 <div
                   className="kanban-cards-wrap"
-                  style={{ padding: '0.75rem', gap: '0.75rem', minHeight: '380px' }}
                   onDragOver={(e) => handleCardsWrapDragOver(e, col.id, colFeatures)}
                   onDrop={(e) => handleColDrop(e, col.id)}
                 >
                   {colFeatures.length === 0 ? (
                     <div
                       style={{
-                        padding: '2.5rem 1rem',
+                        padding: '1.75rem 0.75rem',
                         textAlign: 'center',
                         color: isOverCol ? 'var(--accent-dev)' : 'var(--text-muted)',
                         fontSize: '0.8rem',
@@ -901,10 +904,10 @@ export default function FeatureBoard() {
                             }
                           }}
                           style={{
-                            padding: '1rem',
+                            padding: '0.75rem 0.85rem',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '0.65rem',
+                            gap: '0.5rem',
                             cursor: 'grab'
                           }}
                           title="Drag to move or click to view details"

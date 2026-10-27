@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import SearchableDropdown from './SearchableDropdown';
 import {
   Bug,
   Lightbulb,
@@ -7,6 +8,7 @@ import {
   CheckCircle2,
   Plus,
   Layers,
+  Folder,
   X,
   Check,
   Trash2,
@@ -96,15 +98,65 @@ export default function DefectsListView() {
     return s;
   };
 
-  // Derive unique module names from features
+  // Derive unique module names from features with consistent trimming
   const uniqueModules = Array.from(
-    new Set((projectFeatures || []).map((f) => f.moduleName || 'General').filter(Boolean))
-  );
+    new Set((projectFeatures || []).map((f) => (f.moduleName || 'General').trim()).filter(Boolean))
+  ).sort();
+
+  // Module options formatted for SearchableDropdown with live defect counts
+  const moduleOptions = uniqueModules.map((m) => {
+    const count = allFeatureDefects.filter(
+      (item) => (item.moduleName || 'General').trim().toLowerCase() === m.toLowerCase()
+    ).length;
+    return {
+      value: m,
+      label: m,
+      badge: count,
+      icon: <Folder size={12} color="var(--accent-dev)" />
+    };
+  });
 
   // Available features constrained by module filter
   const availableFeatures = moduleFilter === 'all'
     ? projectFeatures
-    : projectFeatures.filter((f) => (f.moduleName || 'General') === moduleFilter);
+    : projectFeatures.filter(
+        (f) => (f.moduleName || 'General').trim().toLowerCase() === moduleFilter.trim().toLowerCase()
+      );
+
+  // Feature options formatted for SearchableDropdown with module tag and defect counts
+  const featureOptions = availableFeatures.map((f) => {
+    const count = allFeatureDefects.filter(
+      (item) => String(item.featureId) === String(f.id) || String(item.featureCode || '') === String(f.id)
+    ).length;
+    return {
+      value: f.id,
+      label: f.name,
+      sublabel: `${(f.moduleName || 'General').trim()} • ${f.code || f.id}`,
+      badge: count,
+      icon: <Layers size={12} color="var(--accent-dev)" />
+    };
+  });
+
+  // Synchronized Filter Change Handlers
+  const handleModuleChange = (newMod) => {
+    setModuleFilter(newMod);
+    if (newMod !== 'all' && featureFilter !== 'all') {
+      const currentFeat = projectFeatures.find((f) => String(f.id) === String(featureFilter));
+      if (!currentFeat || (currentFeat.moduleName || 'General').trim().toLowerCase() !== newMod.trim().toLowerCase()) {
+        setFeatureFilter('all');
+      }
+    }
+  };
+
+  const handleFeatureChange = (newFeatId) => {
+    setFeatureFilter(newFeatId);
+    if (newFeatId !== 'all') {
+      const chosenFeat = projectFeatures.find((f) => String(f.id) === String(newFeatId));
+      if (chosenFeat && chosenFeat.moduleName) {
+        setModuleFilter(chosenFeat.moduleName.trim());
+      }
+    }
+  };
 
   // Check if any filter is active
   const isAnyFilterActive =
@@ -124,8 +176,9 @@ export default function DefectsListView() {
     setSeverityFilter('all');
   };
 
-  // Pre-filter items by all criteria EXCEPT typeFilter (for dynamic, synchronized pill counts)
+  // Pre-filter items strictly by criteria EXCEPT typeFilter (for dynamic, synchronized pill counts)
   const itemsMatchingOtherFilters = allFeatureDefects.filter((item) => {
+    // 1. Text Search Filter
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       const matchId = (item.id || '').toLowerCase().includes(q);
@@ -136,24 +189,47 @@ export default function DefectsListView() {
       const matchSev = (item.severity || item.priority || '').toLowerCase().includes(q);
       if (!matchId && !matchTitle && !matchFeat && !matchDevNote && !matchRepro && !matchSev) return false;
     }
+
+    // 2. Strict Module Filter
     if (moduleFilter !== 'all') {
-      const feat = projectFeatures.find((f) => String(f.id) === String(item.featureId));
-      if ((feat?.moduleName || 'General') !== moduleFilter) return false;
+      const itemMod = (item.moduleName || 'General').trim().toLowerCase();
+      const targetMod = moduleFilter.trim().toLowerCase();
+      if (itemMod !== targetMod) return false;
     }
-    if (featureFilter !== 'all' && String(item.featureId) !== String(featureFilter)) return false;
+
+    // 3. Strict Feature Filter (strictly isolative to selected feature)
+    if (featureFilter !== 'all') {
+      const targetFeat = projectFeatures.find((f) => String(f.id) === String(featureFilter));
+      const matchId = String(item.featureId) === String(featureFilter);
+      const matchCode = item.featureCode && String(item.featureCode) === String(featureFilter);
+      const matchTargetCode = targetFeat && targetFeat.code && String(item.featureCode || item.featureId) === String(targetFeat.code);
+      if (!matchId && !matchCode && !matchTargetCode) return false;
+    }
+
+    // 4. Status Filter
     if (statusFilter !== 'all' && normalizeStatus(item.status) !== normalizeStatus(statusFilter)) return false;
+
+    // 5. Severity Filter
     if (severityFilter !== 'all') {
       const itemSev = (item.severity || item.priority || 'Medium').toLowerCase();
       if (itemSev !== severityFilter.toLowerCase()) return false;
     }
+
     return true;
   });
 
-  // Filtered defects including typeFilter
-  const filteredItems = itemsMatchingOtherFilters.filter((item) => {
-    if (typeFilter !== 'all' && item.type !== typeFilter) return false;
-    return true;
-  });
+  // Filtered defects including typeFilter, sorted by latest added top
+  const filteredItems = itemsMatchingOtherFilters
+    .filter((item) => {
+      if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeA && timeB && timeA !== timeB) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
+    });
 
   const totalFilteredAll = itemsMatchingOtherFilters.length;
   const totalFilteredBugs = itemsMatchingOtherFilters.filter((d) => d.type === 'bug').length;
@@ -403,63 +479,7 @@ export default function DefectsListView() {
 
   return (
     <div>
-      {/* Top Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          marginBottom: '1.25rem'
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
-            All Defects & Suggestions
-          </h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-            {isAnyFilterActive ? (
-              <span>
-                Showing <strong style={{ color: 'var(--accent-dev)' }}>{filteredItems.length}</strong> of{' '}
-                {allFeatureDefects.length} items in {activeProject?.name} • {openCount} active action(s)
-              </span>
-            ) : (
-              <span>
-                {allFeatureDefects.length} total items in {activeProject?.name} • {openCount} open • Grouped by Feature
-              </span>
-            )}
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          {isAnyFilterActive && (
-            <button
-              className="btn btn-secondary"
-              onClick={resetAllFilters}
-              style={{ fontSize: '0.8rem', padding: '0.45rem 0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-              title="Reset all filters"
-            >
-              <RotateCcw size={13} />
-              <span>Reset Filters</span>
-            </button>
-          )}
-
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              setTargetFeatureId(projectFeatures[0]?.id || '');
-              setIsAddModalOpen(true);
-            }}
-            style={{ fontSize: '0.82rem', padding: '0.45rem 0.9rem' }}
-          >
-            <Plus size={14} />
-            <span>Log Bug or Suggestion</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Filter & Search Bar */}
+      {/* Streamlined Filter & Search Bar with Integrated Add Action (No bulky top title bar) */}
       <div
         className="defects-filter-bar"
         style={{
@@ -473,16 +493,17 @@ export default function DefectsListView() {
           gap: '0.75rem'
         }}
       >
+        {/* Row 1: Search + Type Pills + Log Defect Button */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: '0.85rem'
+            gap: '0.75rem'
           }}
         >
-          {/* Search */}
+          {/* Search Input */}
           <div className="search-input-wrap" style={{ position: 'relative', minWidth: '220px', flex: '1 1 240px' }}>
             <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
@@ -517,75 +538,96 @@ export default function DefectsListView() {
             )}
           </div>
 
-          {/* Type Filter Pills with Dynamic Counts */}
-          <div className="defects-type-pills" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', padding: '2px', borderRadius: 'var(--radius-full)', overflowX: 'auto' }}>
+          {/* Action Row: Type Filter Pills & New Defect Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            {/* Type Filter Pills with Dynamic Synchronized Counts */}
+            <div className="defects-type-pills" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', padding: '2px', borderRadius: 'var(--radius-full)', overflowX: 'auto' }}>
+              <button
+                type="button"
+                className={`persona-btn ${typeFilter === 'all' ? 'active-all' : ''}`}
+                onClick={() => setTypeFilter('all')}
+                style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
+              >
+                All ({totalFilteredAll})
+              </button>
+              <button
+                type="button"
+                className={`persona-btn ${typeFilter === 'bug' ? 'active-dev' : ''}`}
+                onClick={() => setTypeFilter('bug')}
+                style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
+              >
+                🐛 Bugs ({totalFilteredBugs})
+              </button>
+              <button
+                type="button"
+                className={`persona-btn ${typeFilter === 'suggestion' ? 'active-qa' : ''}`}
+                onClick={() => setTypeFilter('suggestion')}
+                style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
+              >
+                💡 Suggestions ({totalFilteredSuggs})
+              </button>
+            </div>
+
+            {/* + Log Bug or Suggestion button (relocated to search row) */}
             <button
-              className={`persona-btn ${typeFilter === 'all' ? 'active-all' : ''}`}
-              onClick={() => setTypeFilter('all')}
-              style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setTargetFeatureId(projectFeatures[0]?.id || '');
+                setIsAddModalOpen(true);
+              }}
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.42rem 0.85rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }}
             >
-              All ({totalFilteredAll})
-            </button>
-            <button
-              className={`persona-btn ${typeFilter === 'bug' ? 'active-dev' : ''}`}
-              onClick={() => setTypeFilter('bug')}
-              style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
-            >
-              🐛 Bugs ({totalFilteredBugs})
-            </button>
-            <button
-              className={`persona-btn ${typeFilter === 'suggestion' ? 'active-qa' : ''}`}
-              onClick={() => setTypeFilter('suggestion')}
-              style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
-            >
-              💡 Suggestions ({totalFilteredSuggs})
+              <Plus size={14} />
+              <span>Log Bug / Suggestion</span>
             </button>
           </div>
         </div>
 
-        {/* Filter Dropdowns Row */}
+        {/* Row 2: Searchable Module & Feature Dropdowns, Status, Severity, Meta counts */}
         <div className="defects-filter-selects" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {/* Module Filter Dropdown (if multiple modules) */}
-          {uniqueModules.length > 1 && (
-            <select
-              className="filter-select"
-              value={moduleFilter}
-              onChange={(e) => {
-                setModuleFilter(e.target.value);
-                setFeatureFilter('all');
-              }}
-              style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
-            >
-              <option value="all">📁 All Modules</option>
-              {uniqueModules.map((m) => (
-                <option key={m} value={m}>
-                  📦 {m}
-                </option>
-              ))}
-            </select>
-          )}
+          {/* Searchable Module Dropdown */}
+          <SearchableDropdown
+            options={moduleOptions}
+            value={moduleFilter}
+            onChange={handleModuleChange}
+            allLabel={`📁 All Modules (${uniqueModules.length})`}
+            placeholder="All Modules"
+            searchPlaceholder="Search modules..."
+            icon={Folder}
+            minWidth="155px"
+            maxWidth="220px"
+            dropdownWidth="260px"
+          />
 
-          {/* Feature Filter Dropdown */}
-          <select
-            className="filter-select"
+          {/* Searchable Feature Dropdown */}
+          <SearchableDropdown
+            options={featureOptions}
             value={featureFilter}
-            onChange={(e) => setFeatureFilter(e.target.value)}
-            style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
-          >
-            <option value="all">All Features ({availableFeatures.length})</option>
-            {availableFeatures.map((f) => (
-              <option key={f.id} value={f.id}>
-                📁 {f.name}
-              </option>
-            ))}
-          </select>
+            onChange={handleFeatureChange}
+            allLabel={`📁 All Features (${availableFeatures.length})`}
+            placeholder="All Features"
+            searchPlaceholder="Search features by name/code..."
+            icon={Layers}
+            minWidth="185px"
+            maxWidth="280px"
+            dropdownWidth="320px"
+          />
 
           {/* Status Filter Dropdown */}
           <select
             className="filter-select"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+            style={{ fontSize: '0.8rem', padding: '0.42rem 0.65rem' }}
           >
             <option value="all">All Statuses</option>
             <option value="open">🟡 Need Dev</option>
@@ -600,7 +642,7 @@ export default function DefectsListView() {
             className="filter-select"
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
-            style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+            style={{ fontSize: '0.8rem', padding: '0.42rem 0.65rem' }}
           >
             <option value="all">All Severities</option>
             <option value="Critical">🔴 Critical</option>
@@ -609,30 +651,38 @@ export default function DefectsListView() {
             <option value="Low">🔵 Low</option>
           </select>
 
-          {/* Clear Filters Badge if active */}
-          {isAnyFilterActive && (
-            <button
-              onClick={resetAllFilters}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '0.35rem 0.65rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'rgba(239, 68, 68, 0.08)',
-                color: 'var(--status-critical)',
-                border: '1px solid var(--status-critical-border)',
-                cursor: 'pointer',
-                fontSize: '0.76rem',
-                fontWeight: 600,
-                marginLeft: 'auto'
-              }}
-              title="Reset all active filters"
-            >
-              <RotateCcw size={11} />
-              <span>Reset Filters</span>
-            </button>
-          )}
+          {/* Result Counter & Reset Button */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+              Showing <strong style={{ color: 'var(--accent-dev)' }}>{filteredItems.length}</strong> of{' '}
+              {allFeatureDefects.length} items
+            </span>
+
+            {isAnyFilterActive && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  color: 'var(--status-critical)',
+                  border: '1px solid var(--status-critical-border)',
+                  cursor: 'pointer',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap'
+                }}
+                title="Reset all active filters"
+              >
+                <RotateCcw size={11} />
+                <span>Reset Filters</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1097,18 +1147,24 @@ export default function DefectsListView() {
                 {/* Target Feature Selector */}
                 <div className="form-group">
                   <label className="form-label">Link to Feature *</label>
-                  <select
-                    className="form-select"
-                    value={targetFeatureId}
-                    onChange={(e) => setTargetFeatureId(e.target.value)}
-                    required
-                  >
-                    {projectFeatures.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        📁 {f.name} ({f.code || f.id})
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableDropdown
+                    options={projectFeatures.map((f) => ({
+                      value: f.id,
+                      label: f.name,
+                      sublabel: `${(f.moduleName || 'General').trim()} • ${f.code || f.id}`,
+                      icon: <Layers size={12} color="var(--accent-dev)" />
+                    }))}
+                    value={targetFeatureId || (projectFeatures[0]?.id || '')}
+                    onChange={(val) => setTargetFeatureId(val === 'all' ? (projectFeatures[0]?.id || '') : val)}
+                    allLabel="Select a feature..."
+                    allowClear={false}
+                    placeholder="Search and select feature..."
+                    searchPlaceholder="Type feature name, code or module..."
+                    icon={Layers}
+                    minWidth="100%"
+                    maxWidth="100%"
+                    dropdownWidth="100%"
+                  />
                 </div>
 
                 {/* Title */}

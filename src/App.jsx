@@ -30,10 +30,10 @@ function MainApp() {
   }
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${activeTab === 'features' ? 'app-features-active' : ''}`}>
       <Header />
 
-      <main className="main-content">
+      <main className={`main-content ${activeTab === 'features' ? 'main-content-features' : ''}`}>
         {activeTab === 'features' && <FeatureBoard />}
         {activeTab === 'board' && <DefectsListView />}
         {activeTab === 'release' && <ReleaseGate />}

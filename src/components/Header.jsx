@@ -207,9 +207,6 @@ export default function Header() {
         >
           <Bug size={14} color="var(--status-critical)" />
           <span>Defects & Suggestions</span>
-          <span className="nav-tab-badge" style={{ marginLeft: '4px' }}>
-            {allFeatureDefects.length}
-          </span>
         </button>
 
         <button

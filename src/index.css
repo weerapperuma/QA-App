@@ -157,6 +157,34 @@ select option {
   padding: 8px 12px;
 }
 
+.searchable-dropdown-container {
+  position: relative;
+}
+
+.searchable-dropdown-trigger {
+  user-select: none;
+}
+
+.searchable-dropdown-trigger:focus-visible {
+  border-color: var(--accent-dev);
+  box-shadow: 0 0 0 2px var(--accent-dev-subtle);
+}
+
+.searchable-dropdown-popover {
+  animation: dropdownFadeIn 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -804,10 +832,9 @@ body {
 /* Kanban Board Layout */
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(280px, 1fr));
-  gap: 1.2rem;
-  overflow-x: auto;
-  padding-bottom: 1.5rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: stretch;
 }
 
 .kanban-col {
@@ -816,12 +843,12 @@ body {
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  min-height: 580px;
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .kanban-col-header {
-  padding: 1rem 1.1rem;
+  padding: 0.65rem 0.85rem;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -1676,17 +1703,9 @@ body {
 /* Kanban Drag & Drop System */
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(280px, 1fr));
-  gap: 1.25rem;
-  align-items: start;
-}
-
-/* Tablet & Medium Screen Adaptations (<= 1200px) */
-@media (max-width: 1200px) {
-  .kanban-board {
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
-    gap: 1rem;
-  }
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: stretch;
 }
 
 /* Tablet Adaptations (<= 1024px) */
@@ -1962,11 +1981,16 @@ body {
   .defects-filter-selects {
     width: 100%;
     display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
-  .defects-filter-selects select {
-    flex: 1;
+  .defects-filter-selects select,
+  .defects-filter-selects .searchable-dropdown-container {
+    flex: 1 1 100%;
     width: 100%;
+    min-width: 100% !important;
+    max-width: 100% !important;
   }
 
   .tickets-table-wrap {
@@ -2069,9 +2093,9 @@ body {
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  min-height: 520px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  overflow: hidden;
 }
 
 .kanban-col.col-drag-over {
@@ -2084,6 +2108,113 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.65rem 0.6rem;
+  gap: 0.55rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+.kanban-cards-wrap::-webkit-scrollbar {
+  width: 5px;
+}
+
+.kanban-cards-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kanban-cards-wrap::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-full);
+}
+
+.kanban-cards-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ====================================================
+   DESKTOP FEATURES BOARD: ZERO-SCROLL VIEWPORT ALIGNMENT
+   ==================================================== */
+@media (min-width: 881px) {
+  /* Prevent window scrolling when on Features page in desktop mode */
+  .app-container.app-features-active {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+
+  .main-content.main-content-features {
+    padding: 0.75rem 1.5rem 0.75rem;
+    max-width: 100%;
+    height: calc(100vh - 65px);
+    max-height: calc(100vh - 65px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .feature-board-view {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .feature-top-bar {
+    flex-shrink: 0;
+    margin-bottom: 0.45rem !important;
+  }
+
+  .module-filter-bar {
+    flex-shrink: 0;
+    margin-bottom: 0.55rem !important;
+    overflow-x: visible !important;
+    flex-wrap: wrap !important;
+  }
+
+  /* All 4 columns perfectly aligned side-by-side in 1 row, matching top and bottom */
+  .kanban-board {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.85rem !important;
+    flex: 1;
+    min-height: 0;
+    height: 100% !important;
+    align-items: stretch !important;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+  }
+
+  .kanban-col {
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .kanban-col-header {
+    flex-shrink: 0;
+  }
+
+  /* Only cards wrap inside column box scrolls if needed */
+  .kanban-cards-wrap {
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .modules-list-view {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.35rem;
+  }
 }
 
 .ticket-card {

@@ -637,6 +637,7 @@ export function AppProvider({ children }) {
   // All bugs & suggestions linked to features in the active project (guaranteed unique by composite key)
   const defectMap = new Map();
   projectFeatures.forEach((feat) => {
+    const featModule = (feat.moduleName || 'General').trim();
     const seenBugIdsInFeat = new Set();
     (feat.bugs || []).forEach((bug) => {
       if (!bug || !bug.id || seenBugIdsInFeat.has(bug.id)) return;
@@ -648,6 +649,7 @@ export function AppProvider({ children }) {
         featureId: feat.id,
         featureName: feat.name,
         featureCode: feat.code || feat.id,
+        moduleName: featModule,
         assignedDev: bug.assignedDev || feat.assignedDev,
         assignedQa: bug.reportedBy || feat.assignedQa,
         environment: feat.environment || 'staging'
@@ -666,13 +668,19 @@ export function AppProvider({ children }) {
         featureId: feat.id,
         featureName: feat.name,
         featureCode: feat.code || feat.id,
+        moduleName: featModule,
         assignedDev: feat.assignedDev,
         assignedQa: sugg.submittedBy || feat.assignedQa,
         environment: feat.environment || 'staging'
       });
     });
   });
-  const allFeatureDefects = Array.from(defectMap.values());
+  const allFeatureDefects = Array.from(defectMap.values()).sort((a, b) => {
+    const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (timeA && timeB && timeA !== timeB) return timeB - timeA;
+    return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
+  });
 
   // Project Actions
   const createProject = async (projectData) => {
