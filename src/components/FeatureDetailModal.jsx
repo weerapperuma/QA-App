@@ -42,7 +42,9 @@ export default function FeatureDetailModal() {
     openCreateFeatureModal,
     updateFeatureModule,
     deleteFeature,
-    team
+    team,
+    updateDefectsFilter,
+    setActiveTab
   } = useApp();
 
   // Inline Bug form state
@@ -413,14 +415,36 @@ export default function FeatureDetailModal() {
                   )}
                 </div>
 
-                <button
-                  className="btn btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: 'var(--status-critical)' }}
-                  onClick={() => setShowAddBugForm(!showAddBugForm)}
-                >
-                  <Plus size={13} />
-                  <span>Log Bug on Feature</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+                    onClick={() => {
+                      if (updateDefectsFilter) {
+                        updateDefectsFilter({
+                          featureFilter: selectedFeature.id,
+                          moduleFilter: (selectedFeature.moduleName || 'General').trim(),
+                          typeFilter: 'bug'
+                        });
+                      }
+                      closeFeature();
+                      if (setActiveTab) setActiveTab('board');
+                    }}
+                    title="View this feature's bugs in the main Defects table"
+                  >
+                    <ExternalLink size={13} />
+                    <span>View in Defects</span>
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: 'var(--status-critical)' }}
+                    onClick={() => setShowAddBugForm(!showAddBugForm)}
+                  >
+                    <Plus size={13} />
+                    <span>Log Bug on Feature</span>
+                  </button>
+                </div>
               </div>
 
               {/* Inline Add Bug Form */}
@@ -734,14 +758,36 @@ export default function FeatureDetailModal() {
                   </span>
                 </div>
 
-                <button
-                  className="btn btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: '#eab308' }}
-                  onClick={() => setShowAddSuggForm(!showAddSuggForm)}
-                >
-                  <Plus size={13} />
-                  <span>Add Suggestion</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+                    onClick={() => {
+                      if (updateDefectsFilter) {
+                        updateDefectsFilter({
+                          featureFilter: selectedFeature.id,
+                          moduleFilter: (selectedFeature.moduleName || 'General').trim(),
+                          typeFilter: 'suggestion'
+                        });
+                      }
+                      closeFeature();
+                      if (setActiveTab) setActiveTab('board');
+                    }}
+                    title="View this feature's suggestions in the main Defects table"
+                  >
+                    <ExternalLink size={13} />
+                    <span>View in Defects</span>
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: '#eab308' }}
+                    onClick={() => setShowAddSuggForm(!showAddSuggForm)}
+                  >
+                    <Plus size={13} />
+                    <span>Add Suggestion</span>
+                  </button>
+                </div>
               </div>
 
               {/* Inline Add Suggestion Form */}

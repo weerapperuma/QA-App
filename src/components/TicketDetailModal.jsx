@@ -17,6 +17,7 @@ import {
   Server,
   ArrowRight
 } from 'lucide-react';
+import { parseDateSafe } from '../utils/dateUtils';
 
 export default function TicketDetailModal() {
   const {
@@ -740,7 +741,7 @@ export default function TicketDetailModal() {
               </div>
               <div>
                 <strong>Created: </strong>
-                <span>{new Date(selectedTicket.createdAt).toLocaleDateString()}</span>
+                <span>{parseDateSafe(selectedTicket.createdAt)?.toLocaleDateString() || selectedTicket.createdAt || 'N/A'}</span>
               </div>
             </div>
 

@@ -43,7 +43,11 @@ export default function FeatureBoard() {
     team,
     openCreateFeatureModal,
     setIsCreateModuleModalOpen,
-    deleteModule
+    deleteModule,
+    featureBoardModuleFilter: selectedModuleFilter = 'all',
+    setFeatureBoardModuleFilter: setSelectedModuleFilter,
+    featureBoardViewMode: viewMode = 'kanban',
+    setFeatureBoardViewMode: setViewMode
   } = useApp();
 
   const [draggedFeatId, setDraggedFeatId] = useState(null);
@@ -51,12 +55,6 @@ export default function FeatureBoard() {
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const dragCounterRef = useRef({});
   const wasDraggingRef = useRef(false);
-
-  // View state: 'kanban' | 'modules'
-  const [viewMode, setViewMode] = useState('kanban');
-
-  // Filter by Module: 'all' | specific moduleName
-  const [selectedModuleFilter, setSelectedModuleFilter] = useState('all');
 
   // Mobile Column Filter: 'all' | columnId
   const [mobileColFilter, setMobileColFilter] = useState('all');

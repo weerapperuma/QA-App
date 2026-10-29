@@ -584,6 +584,102 @@ export async function saveTestSuiteToFirestore(suite) {
 }
 
 // ----------------------------------------------------
+// NOTIFICATIONS COLLECTION
+// ----------------------------------------------------
+
+export function subscribeNotifications(onNotificationsUpdate, fallbackNotifications = []) {
+  if (!firestoreDb) return () => {};
+
+  const notifsCol = collection(firestoreDb, 'notifications');
+
+  const unsubscribe = onSnapshot(
+    notifsCol,
+    (snapshot) => {
+      if (snapshot.empty && fallbackNotifications.length > 0) {
+        onNotificationsUpdate(fallbackNotifications);
+        return;
+      }
+
+      const notifs = [];
+      snapshot.forEach((docSnap) => {
+        notifs.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      // Sort newest first
+      notifs.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      onNotificationsUpdate(notifs);
+    },
+    (err) => {
+      console.warn('Firestore notifications subscription error:', err);
+    }
+  );
+
+  return unsubscribe;
+}
+
+export async function saveNotificationToFirestore(notification) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    const notifRef = doc(firestoreDb, 'notifications', notification.id);
+    await setDoc(notifRef, cleanForFirestore({
+      ...notification,
+      updatedAt: new Date().toISOString()
+    }), { merge: true });
+    return { success: true };
+  } catch (err) {
+    console.error('saveNotificationToFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function markNotificationReadInFirestore(notificationId, isRead = true) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    const notifRef = doc(firestoreDb, 'notifications', notificationId);
+    await setDoc(notifRef, { read: isRead, updatedAt: new Date().toISOString() }, { merge: true });
+    return { success: true };
+  } catch (err) {
+    console.error('markNotificationReadInFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteNotificationFromFirestore(notificationId) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+
+  try {
+    await deleteDoc(doc(firestoreDb, 'notifications', notificationId));
+    return { success: true };
+  } catch (err) {
+    console.error('deleteNotificationFromFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearAllNotificationsInFirestore(notificationIds = []) {
+  if (!firestoreDb || !Array.isArray(notificationIds) || notificationIds.length === 0) {
+    return { success: true };
+  }
+
+  try {
+    for (const id of notificationIds) {
+      await deleteDoc(doc(firestoreDb, 'notifications', id));
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('clearAllNotificationsInFirestore error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// ----------------------------------------------------
 // BULK DATA SYNC
 // ----------------------------------------------------
 

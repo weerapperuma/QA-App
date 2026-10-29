@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import NotificationCenter from './NotificationCenter';
 import {
   Layers,
   Sun,
@@ -219,8 +220,11 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Right: Theme Toggle & Current User Profile with Popover */}
+      {/* Right: Theme Toggle, Notifications & Current User Profile */}
       <div className="header-right">
+        {/* Team Notifications Center */}
+        <NotificationCenter />
+
         {/* Theme Toggle (Dark/Light mode) */}
         <button
           className="btn-icon"

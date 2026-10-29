@@ -16,8 +16,12 @@ import {
   Code2,
   ChevronDown,
   Filter,
-  RotateCcw
+  RotateCcw,
+  Eye,
+  Copy,
+  Clock
 } from 'lucide-react';
+import { parseDateSafe, formatItemDateTime } from '../utils/dateUtils';
 
 export default function DefectsListView() {
   const {
@@ -34,15 +38,46 @@ export default function DefectsListView() {
     addSuggestionToFeature,
     deleteBugFromFeature,
     deleteSuggestionFromFeature,
-    modules = []
+    modules = [],
+    addToast,
+    defectsFilters,
+    updateDefectsFilter,
+    resetDefectsFilters
   } = useApp();
 
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'bug' | 'suggestion'
-  const [moduleFilter, setModuleFilter] = useState('all');
-  const [featureFilter, setFeatureFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [severityFilter, setSeverityFilter] = useState('all');
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopy = (e, item) => {
+    e.stopPropagation();
+    const copyText = item.title;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(copyText);
+    }
+    setCopiedId(item.id);
+    if (addToast) {
+      addToast(`Copied title to clipboard!`, 'info');
+    }
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 1800);
+  };
+
+  // Persistent session filter state
+  const {
+    search = '',
+    typeFilter = 'all',
+    moduleFilter = 'all',
+    featureFilter = 'all',
+    statusFilter = 'all',
+    severityFilter = 'all'
+  } = defectsFilters || {};
+
+  const setSearch = (val) => updateDefectsFilter('search', typeof val === 'function' ? val(search) : val);
+  const setTypeFilter = (val) => updateDefectsFilter('typeFilter', typeof val === 'function' ? val(typeFilter) : val);
+  const setModuleFilter = (val) => updateDefectsFilter('moduleFilter', typeof val === 'function' ? val(moduleFilter) : val);
+  const setFeatureFilter = (val) => updateDefectsFilter('featureFilter', typeof val === 'function' ? val(featureFilter) : val);
+  const setStatusFilter = (val) => updateDefectsFilter('statusFilter', typeof val === 'function' ? val(statusFilter) : val);
+  const setSeverityFilter = (val) => updateDefectsFilter('severityFilter', typeof val === 'function' ? val(severityFilter) : val);
 
   // Quick Add Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -139,23 +174,25 @@ export default function DefectsListView() {
 
   // Synchronized Filter Change Handlers
   const handleModuleChange = (newMod) => {
-    setModuleFilter(newMod);
+    const updates = { moduleFilter: newMod };
     if (newMod !== 'all' && featureFilter !== 'all') {
       const currentFeat = projectFeatures.find((f) => String(f.id) === String(featureFilter));
       if (!currentFeat || (currentFeat.moduleName || 'General').trim().toLowerCase() !== newMod.trim().toLowerCase()) {
-        setFeatureFilter('all');
+        updates.featureFilter = 'all';
       }
     }
+    updateDefectsFilter(updates);
   };
 
   const handleFeatureChange = (newFeatId) => {
-    setFeatureFilter(newFeatId);
+    const updates = { featureFilter: newFeatId };
     if (newFeatId !== 'all') {
       const chosenFeat = projectFeatures.find((f) => String(f.id) === String(newFeatId));
       if (chosenFeat && chosenFeat.moduleName) {
-        setModuleFilter(chosenFeat.moduleName.trim());
+        updates.moduleFilter = chosenFeat.moduleName.trim();
       }
     }
+    updateDefectsFilter(updates);
   };
 
   // Check if any filter is active
@@ -168,12 +205,7 @@ export default function DefectsListView() {
     severityFilter !== 'all';
 
   const resetAllFilters = () => {
-    setSearch('');
-    setTypeFilter('all');
-    setModuleFilter('all');
-    setFeatureFilter('all');
-    setStatusFilter('all');
-    setSeverityFilter('all');
+    resetDefectsFilters();
   };
 
   // Pre-filter items strictly by criteria EXCEPT typeFilter (for dynamic, synchronized pill counts)
@@ -225,8 +257,8 @@ export default function DefectsListView() {
       return true;
     })
     .sort((a, b) => {
-      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      const timeA = parseDateSafe(a.createdAt)?.getTime() || 0;
+      const timeB = parseDateSafe(b.createdAt)?.getTime() || 0;
       if (timeA && timeB && timeA !== timeB) return timeB - timeA;
       return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
     });
@@ -573,7 +605,11 @@ export default function DefectsListView() {
               type="button"
               className="btn btn-primary"
               onClick={() => {
-                setTargetFeatureId(projectFeatures[0]?.id || '');
+                setTargetFeatureId(
+                  featureFilter !== 'all'
+                    ? featureFilter
+                    : (availableFeatures[0]?.id || projectFeatures[0]?.id || '')
+                );
                 setIsAddModalOpen(true);
               }}
               style={{
@@ -738,16 +774,71 @@ export default function DefectsListView() {
                 return (
                   <tr
                     key={`${item.featureId}-${item.id}-${item.type}`}
-                    onClick={() => setViewItem(item)}
+                    onClick={(e) => {
+                      // Do NOT open popup if user was selecting/highlighting text to copy
+                      const sel = window.getSelection();
+                      if (sel && sel.toString().trim().length > 0) return;
+                      // Do NOT open if clicked on interactive buttons or selects
+                      if (e.target.closest('button, select, input, a, .btn-icon, .tag-pill')) return;
+                      setViewItem(item);
+                    }}
                     style={{ cursor: 'pointer' }}
                   >
                     {/* Summary */}
                     <td>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.86rem' }}>
-                        {item.title}
+                      {/* Added Date & Time (Over the title) */}
+                      {item.createdAt && (
+                        <div
+                          style={{
+                            fontSize: '0.68rem',
+                            color: 'var(--text-muted)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            marginBottom: '2px',
+                            userSelect: 'text'
+                          }}
+                        >
+                          <Clock size={11} style={{ opacity: 0.65, flexShrink: 0 }} />
+                          <span>{formatItemDateTime(item.createdAt)}</span>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            fontSize: '0.86rem',
+                            cursor: 'text'
+                          }}
+                        >
+                          {item.title}
+                        </span>
+
+                        {/* One-click Quick Copy Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopy(e, item)}
+                          className="btn-icon"
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            padding: 0,
+                            color: copiedId === item.id ? 'var(--accent-qa)' : 'var(--text-muted)',
+                            opacity: copiedId === item.id ? 1 : 0.65,
+                            border: 'none',
+                            background: 'transparent',
+                            cursor: 'pointer'
+                          }}
+                          title={copiedId === item.id ? 'Copied to clipboard!' : `Copy title: "${item.title}"`}
+                        >
+                          {copiedId === item.id ? <Check size={12} color="var(--accent-qa)" /> : <Copy size={12} />}
+                        </button>
                       </div>
+
                       {item.devNote && (
-                        <div className="summary-dev-note">
+                        <div className="summary-dev-note" style={{ cursor: 'text' }}>
                           <span className="summary-dev-badge">Dev Note</span>
                           <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
                             "{item.devNote}"
@@ -817,12 +908,27 @@ export default function DefectsListView() {
                       </div>
                     </td>
 
-                    {/* Actions: Edit & Delete Icons */}
+                    {/* Actions: View Details, Edit & Delete Icons */}
                     <td style={{ textAlign: 'right' }}>
                       <div
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.35rem' }}
                         onClick={(e) => e.stopPropagation()}
                       >
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            color: 'var(--accent-dev)',
+                            border: '1px solid var(--border-subtle)',
+                            background: 'var(--bg-surface)'
+                          }}
+                          onClick={() => setViewItem(item)}
+                          title="View Details"
+                        >
+                          <Eye size={12} />
+                        </button>
                         <button
                           type="button"
                           className="btn-icon"

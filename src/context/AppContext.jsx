@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   INITIAL_PROJECTS,
@@ -37,9 +37,15 @@ import {
   saveReleaseToFirestore,
   subscribeTestSuites,
   saveTestSuiteToFirestore,
+  subscribeNotifications,
+  saveNotificationToFirestore,
+  markNotificationReadInFirestore,
+  deleteNotificationFromFirestore,
+  clearAllNotificationsInFirestore,
   seedAllDataToFirestore,
   findUserInFirestore
 } from '../services/firebaseService';
+import { parseDateSafe } from '../utils/dateUtils';
 
 const AppContext = createContext();
 
@@ -50,6 +56,7 @@ const STORAGE_KEYS = {
   ACTIVE_PROJECT: 'devbridge_active_proj_v3',
   FEATURES: 'devbridge_features_v3',
   MODULES: 'devbridge_modules_v3',
+  NOTIFICATIONS: 'devbridge_notifications_v3',
   TEAM: 'devbridge_team_v3',
   TICKETS: 'devbridge_tickets_v3',
   SUITES: 'devbridge_suites_v3',
@@ -128,7 +135,7 @@ export function AppProvider({ children }) {
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({
+  const [filters, setFiltersState] = useState({
     severity: 'all',
     status: 'all',
     environment: 'all',
@@ -136,6 +143,53 @@ export function AppProvider({ children }) {
     assignedDev: 'all',
     assignedQa: 'all'
   });
+
+  // Persistent Defects & Suggestions Filter State for the current session
+  const [defectsFilters, setDefectsFilters] = useState({
+    search: '',
+    typeFilter: 'all',
+    moduleFilter: 'all',
+    featureFilter: 'all',
+    statusFilter: 'all',
+    severityFilter: 'all'
+  });
+
+  const updateDefectsFilter = (keyOrObj, value) => {
+    if (typeof keyOrObj === 'object' && keyOrObj !== null) {
+      setDefectsFilters((prev) => ({ ...prev, ...keyOrObj }));
+    } else {
+      setDefectsFilters((prev) => ({ ...prev, [keyOrObj]: value }));
+    }
+  };
+
+  const resetDefectsFilters = () => {
+    setDefectsFilters({
+      search: '',
+      typeFilter: 'all',
+      moduleFilter: 'all',
+      featureFilter: 'all',
+      statusFilter: 'all',
+      severityFilter: 'all'
+    });
+  };
+
+  // Synchronize KPI setFilters with defectsFilters
+  const setFilters = (updater) => {
+    setFiltersState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setDefectsFilters((dPrev) => {
+        const synced = { ...dPrev };
+        if (next.status !== undefined) synced.statusFilter = next.status;
+        if (next.severity !== undefined) synced.severityFilter = next.severity;
+        return synced;
+      });
+      return next;
+    });
+  };
+
+  // Persistent Feature Board module & view filters for current session
+  const [featureBoardModuleFilter, setFeatureBoardModuleFilter] = useState('all');
+  const [featureBoardViewMode, setFeatureBoardViewMode] = useState('kanban');
 
   // Projects State
   const [projects, setProjects] = useState(() => {
@@ -150,6 +204,16 @@ export function AppProvider({ children }) {
   const [activeProjectId, setActiveProjectId] = useState(() => {
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_PROJECT) || INITIAL_PROJECTS[0]?.id || 'proj-default';
   });
+
+  // Reset filters when switching to a DIFFERENT project
+  const prevActiveProjectIdRef = useRef(activeProjectId);
+  useEffect(() => {
+    if (prevActiveProjectIdRef.current && prevActiveProjectIdRef.current !== activeProjectId) {
+      resetDefectsFilters();
+      setFeatureBoardModuleFilter('all');
+    }
+    prevActiveProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
 
   // Features State (Each feature has its own lifecycle + linked bugs & suggestions)
   const [features, setFeatures] = useState(() => {
@@ -247,10 +311,24 @@ export function AppProvider({ children }) {
   // Toast Notifications
   const [toasts, setToasts] = useState([]);
 
+  // Team Notifications (persistent workflow alerts)
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Sync state to LocalStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ROLE, role);
   }, [role]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+  }, [notifications]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
@@ -352,6 +430,13 @@ export function AppProvider({ children }) {
         }
       }, INITIAL_TEST_SUITES);
 
+      // 7. Team Notifications
+      const unsubNotifications = subscribeNotifications((firestoreNotifs) => {
+        if (firestoreNotifs) {
+          setNotifications(firestoreNotifs);
+        }
+      }, []);
+
       return () => {
         unsubUsers();
         unsubProjects();
@@ -360,6 +445,7 @@ export function AppProvider({ children }) {
         unsubTickets();
         unsubReleases();
         unsubSuites();
+        unsubNotifications();
       };
     } else {
       setFirebaseStatus(res.status || 'not_configured');
@@ -413,6 +499,81 @@ export function AppProvider({ children }) {
 
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Team Notifications dispatcher & management
+  const addNotification = async ({
+    type,
+    title,
+    message,
+    targetRole = 'all',
+    targetFeatureId = null,
+    targetFeatureName = null,
+    targetDefectId = null,
+    severity = 'info',
+    meta = {}
+  }) => {
+    const authorName = currentUser?.name || (role === 'qa' ? 'QA Engineer' : 'Developer');
+    const newNotif = {
+      id: `notif-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+      projectId: activeProjectId,
+      type,
+      title,
+      message,
+      targetRole,
+      targetFeatureId,
+      targetFeatureName,
+      targetDefectId,
+      severity,
+      read: false,
+      authorName,
+      authorId: currentUser?.id || 'system',
+      authorRole: currentUser?.role || role || 'team',
+      createdAt: new Date().toISOString(),
+      ...meta
+    };
+
+    setNotifications((prev) => [newNotif, ...(prev || [])].slice(0, 100));
+
+    if (firebaseStatus === 'connected') {
+      await saveNotificationToFirestore(newNotif);
+    }
+
+    return newNotif;
+  };
+
+  const markNotificationAsRead = async (notifId) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, read: true } : n))
+    );
+    if (firebaseStatus === 'connected') {
+      await markNotificationReadInFirestore(notifId, true);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    if (firebaseStatus === 'connected') {
+      const unread = (notifications || []).filter((n) => !n.read);
+      for (const n of unread) {
+        await markNotificationReadInFirestore(n.id, true);
+      }
+    }
+  };
+
+  const deleteNotification = async (notifId) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    if (firebaseStatus === 'connected') {
+      await deleteNotificationFromFirestore(notifId);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    const ids = (notifications || []).map((n) => n.id);
+    setNotifications([]);
+    if (firebaseStatus === 'connected' && ids.length > 0) {
+      await clearAllNotificationsInFirestore(ids);
+    }
   };
 
   const toggleTheme = () => {
@@ -676,8 +837,8 @@ export function AppProvider({ children }) {
     });
   });
   const allFeatureDefects = Array.from(defectMap.values()).sort((a, b) => {
-    const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    const timeA = parseDateSafe(a.createdAt)?.getTime() || 0;
+    const timeB = parseDateSafe(b.createdAt)?.getTime() || 0;
     if (timeA && timeB && timeA !== timeB) return timeB - timeA;
     return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
   });
@@ -909,6 +1070,15 @@ export function AppProvider({ children }) {
     }
 
     addToast(`Feature "${newFeature.name}" created under ${newFeature.moduleName}!`, 'success', 'Feature Created');
+    addNotification({
+      type: 'feature_created',
+      title: `New Feature: "${newFeature.name}"`,
+      message: `${currentUser?.name || 'Developer'} created feature "${newFeature.name}" in module "${newFeature.moduleName}". Ready for QA test scoping.`,
+      targetRole: 'qa',
+      targetFeatureId: newFeature.id,
+      targetFeatureName: newFeature.name,
+      severity: 'info'
+    });
     openFeature(newFeature.id);
     return newFeature;
   };
@@ -1009,6 +1179,15 @@ export function AppProvider({ children }) {
         'success',
         'QA Retest Ready'
       );
+      addNotification({
+        type: 'feature_ready_for_qa',
+        title: `Feature Ready for QA: "${feat.name}"`,
+        message: `Feature "${feat.name}" deployed to Staging by ${currentUser?.name || 'Developer'} and marked Ready for QA testing!`,
+        targetRole: 'qa',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'info'
+      });
     } else if (newStatus === 'verified') {
       // Check if any open blocker bugs exist
       const openBugs = (feat.bugs || []).filter((b) => b.status !== 'verified');
@@ -1029,6 +1208,26 @@ export function AppProvider({ children }) {
         'verified',
         'Feature Completed'
       );
+      addNotification({
+        type: 'feature_verified',
+        title: `Feature QA Passed & Closed: "${feat.name}" 🎉`,
+        message: `Feature "${feat.name}" passed all QA verification checks and was signed off & closed by ${currentUser?.name || 'QA'}! Ready for release.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'success'
+      });
+    } else if (newStatus === 'blocked') {
+      addNotification({
+        type: 'feature_blocked',
+        title: `Feature Blocked: "${feat.name}" ⚠️`,
+        message: `Feature "${feat.name}" was marked Blocked. ${metadata.blockReason ? `Reason: "${metadata.blockReason}"` : 'Needs developer or lead unblock.'}`,
+        targetRole: 'all',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'critical'
+      });
+      addToast(`Feature "${feat.name}" marked Blocked!`, 'critical', 'Feature Blocked');
     } else {
       addToast(`Feature status updated to "${newStatus.replace(/_/g, ' ').toUpperCase()}"`, 'info');
     }
@@ -1072,6 +1271,15 @@ export function AppProvider({ children }) {
           'success',
           'QA Retest Ready'
         );
+        addNotification({
+          type: 'feature_ready_for_qa',
+          title: `Feature Ready for QA: "${feat.name}"`,
+          message: `Feature "${feat.name}" moved to Ready for QA by ${currentUser?.name || 'Developer'}. Ready for test verification!`,
+          targetRole: 'qa',
+          targetFeatureId: feat.id,
+          targetFeatureName: feat.name,
+          severity: 'info'
+        });
       } else if (targetStatus === 'verified') {
         const openBugs = (feat.bugs || []).filter((b) => b.status !== 'verified');
         if (openBugs.length > 0) {
@@ -1091,6 +1299,15 @@ export function AppProvider({ children }) {
           'verified',
           'Feature Completed'
         );
+        addNotification({
+          type: 'feature_verified',
+          title: `Feature QA Passed & Closed: "${feat.name}" 🎉`,
+          message: `Feature "${feat.name}" was verified and closed by ${currentUser?.name || 'QA'}. Ready for release!`,
+          targetRole: 'developer',
+          targetFeatureId: feat.id,
+          targetFeatureName: feat.name,
+          severity: 'success'
+        });
       } else {
         const readable = targetStatus.replace(/_/g, ' ').toUpperCase();
         addToast(`Moved "${feat.name}" to ${readable}`, 'info', 'Status Updated');
@@ -1215,7 +1432,7 @@ export function AppProvider({ children }) {
     const isDuplicate = (feat.bugs || []).some(
       (b) =>
         b.title.trim().toLowerCase() === (bugData.title || '').trim().toLowerCase() &&
-        Math.abs(Date.now() - new Date(b.createdAt || 0).getTime()) < 5000
+        Math.abs(Date.now() - (parseDateSafe(b.createdAt)?.getTime() || 0)) < 5000
     );
     if (isDuplicate) {
       addToast('This defect was just logged a moment ago.', 'warning');
@@ -1246,7 +1463,7 @@ export function AppProvider({ children }) {
       reproSteps: bugData.reproSteps || '',
       expectedResult: bugData.expectedResult || '',
       actualResult: bugData.actualResult || '',
-      createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
+      createdAt: new Date().toISOString()
     };
 
     const seenBugs = new Set();
@@ -1275,6 +1492,17 @@ export function AppProvider({ children }) {
       'warning',
       'Defect Logged on Feature'
     );
+    const totalBugsNow = updatedBugs.length;
+    addNotification({
+      type: 'bug_logged',
+      title: `Defect [${newBug.id}] on "${feat.name}"`,
+      message: `QA ${currentUser?.name || 'Tester'} logged [${newBug.id}] "${newBug.title}" (${newBug.severity}). Feature has ${totalBugsNow} defect(s).`,
+      targetRole: 'developer',
+      targetFeatureId: feat.id,
+      targetFeatureName: feat.name,
+      targetDefectId: newBug.id,
+      severity: newBug.severity === 'Critical' ? 'critical' : 'warning'
+    });
   };
 
   // Update Feature Bug Status (Open -> In Dev -> Ready for Retest (Dev Fixed) -> Verified (QA Passed))
@@ -1289,10 +1517,40 @@ export function AppProvider({ children }) {
         origin: { y: 0.7 }
       });
       addToast(`Defect [${bugId}] verified & passed by QA! 🎉`, 'verified');
+      addNotification({
+        type: 'qa_passed',
+        title: `QA Passed: Defect [${bugId}] 🎉`,
+        message: `Defect [${bugId}] on feature "${feat.name}" passed QA retest verification and is now closed.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: bugId,
+        severity: 'success'
+      });
     } else if (newStatus === 'ready_for_qa') {
       addToast(`Defect [${bugId}] marked Dev Fixed. Ready for QA retest!`, 'success');
+      addNotification({
+        type: 'dev_fixed',
+        title: `Dev Fixed: [${bugId}] on "${feat.name}"`,
+        message: `Defect [${bugId}] was resolved by ${currentUser?.name || 'Developer'}.${extraData?.devNote ? ` Note: "${extraData.devNote}"` : ''} Ready for QA retest!`,
+        targetRole: 'qa',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: bugId,
+        severity: 'success'
+      });
     } else if (newStatus === 'qa_failed') {
       addToast(`Defect [${bugId}] marked QA Failed! Returned for rework.`, 'warning', 'QA Retest Failed');
+      addNotification({
+        type: 'qa_failed',
+        title: `QA Retest Failed: [${bugId}] 🔴`,
+        message: `Defect [${bugId}] on feature "${feat.name}" failed QA verification and was returned for rework.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: bugId,
+        severity: 'critical'
+      });
     } else if (newStatus === 'in_dev') {
       addToast(`Defect [${bugId}] moved to In Development.`, 'info');
     } else if (newStatus === 'open') {
@@ -1382,7 +1640,7 @@ export function AppProvider({ children }) {
     const isDuplicate = (feat.suggestions || []).some(
       (s) =>
         s.title.trim().toLowerCase() === (suggData.title || '').trim().toLowerCase() &&
-        Math.abs(Date.now() - new Date(s.createdAt || 0).getTime()) < 5000
+        Math.abs(Date.now() - (parseDateSafe(s.createdAt)?.getTime() || 0)) < 5000
     );
     if (isDuplicate) {
       addToast('This suggestion was just logged a moment ago.', 'warning');
@@ -1409,7 +1667,7 @@ export function AppProvider({ children }) {
       status: 'open',
       submittedBy: author,
       notes: suggData.notes || '',
-      createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
+      createdAt: new Date().toISOString()
     };
 
     const seenSuggs = new Set();
@@ -1438,6 +1696,16 @@ export function AppProvider({ children }) {
       'info',
       'QA Improvement Noted'
     );
+    addNotification({
+      type: 'suggestion_logged',
+      title: `QA Suggestion [${newSugg.id}] on "${feat.name}"`,
+      message: `QA ${currentUser?.name || 'Tester'} submitted suggestion: "${newSugg.title}" (${newSugg.priority}).`,
+      targetRole: 'developer',
+      targetFeatureId: feat.id,
+      targetFeatureName: feat.name,
+      targetDefectId: newSugg.id,
+      severity: 'info'
+    });
   };
 
   const updateSuggestionStatus = async (featureId, suggId, newStatus, extraData = {}) => {
@@ -1451,10 +1719,40 @@ export function AppProvider({ children }) {
         origin: { y: 0.7 }
       });
       addToast(`Suggestion [${suggId}] verified and closed! 🎉`, 'verified');
+      addNotification({
+        type: 'qa_passed',
+        title: `Suggestion Verified: [${suggId}] 🎉`,
+        message: `Suggestion [${suggId}] on feature "${feat.name}" was verified & closed by QA.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: suggId,
+        severity: 'success'
+      });
     } else if (newStatus === 'ready_for_qa') {
       addToast(`Suggestion [${suggId}] marked Dev Implemented. Ready for QA retest!`, 'success');
+      addNotification({
+        type: 'dev_fixed',
+        title: `Dev Implemented: Suggestion [${suggId}]`,
+        message: `Suggestion [${suggId}] on "${feat.name}" was implemented by Developer. Ready for QA review!`,
+        targetRole: 'qa',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: suggId,
+        severity: 'success'
+      });
     } else if (newStatus === 'qa_failed') {
       addToast(`Suggestion [${suggId}] marked QA Failed! Returned for rework.`, 'warning', 'QA Retest Failed');
+      addNotification({
+        type: 'qa_failed',
+        title: `Suggestion Review Failed: [${suggId}]`,
+        message: `Suggestion [${suggId}] on feature "${feat.name}" needs further adjustments.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        targetDefectId: suggId,
+        severity: 'warning'
+      });
     } else if (newStatus === 'in_dev') {
       addToast(`Suggestion [${suggId}] moved to In Development.`, 'info');
     } else if (newStatus === 'open') {
@@ -1890,7 +2188,7 @@ export function AppProvider({ children }) {
       prev.map((rel) => {
         if (rel.id !== releaseId) return rel;
         const newGateChecks = { ...rel.gateChecks };
-        const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        const now = new Date().toISOString();
 
         if (signerRole === 'developer') {
           newGateChecks.devLeadSignoff = {
@@ -2067,6 +2365,14 @@ export function AppProvider({ children }) {
         isCreateFeatureModalOpen,
         setIsCreateFeatureModalOpen,
         allFeatureDefects,
+        defectsFilters,
+        setDefectsFilters,
+        updateDefectsFilter,
+        resetDefectsFilters,
+        featureBoardModuleFilter,
+        setFeatureBoardModuleFilter,
+        featureBoardViewMode,
+        setFeatureBoardViewMode,
         tickets,
         filteredTickets,
         testSuites,
@@ -2097,6 +2403,12 @@ export function AppProvider({ children }) {
         toasts,
         addToast,
         removeToast,
+        notifications,
+        addNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        deleteNotification,
+        clearAllNotifications,
         currentUser,
         isAuthenticated,
         login,
