@@ -3468,3 +3468,9 @@ body {
 .fd-confirm-tick input { margin-top: 2px; }
 .fd-next-hint { align-self: center; font-size: 0.74rem; color: #f59e0b; }
 .fd-wait { align-self: center; font-size: 0.72rem; font-weight: 600; color: #818cf8; white-space: nowrap; }
+
+/* Sortable table headers (Defects & Suggestions) */
+.tickets-table th.th-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.tickets-table th.th-sortable:hover { color: var(--text-primary); }
+.th-sort-icon { vertical-align: -1px; margin-left: 3px; opacity: 0.45; }
+.th-sort-icon.on { opacity: 1; color: var(--accent-dev); }

@@ -20,7 +20,10 @@ import {
   RotateCcw,
   Eye,
   Copy,
-  Clock
+  Clock,
+  ArrowUpDown,
+  ArrowDown,
+  ArrowUp
 } from 'lucide-react';
 import { parseDateSafe, formatItemDateTime } from '../utils/dateUtils';
 
@@ -100,6 +103,8 @@ export default function DefectsListView() {
 
   // Edit Modal state
   const [editItem, setEditItem] = useState(null);
+  // Column sorting: summary (latest first) | type (severity) | status (workflow)
+  const [sortBy, setSortBy] = useState({ key: 'summary', dir: 'asc' });
   const [editType, setEditType] = useState('bug');
   const [editTitle, setEditTitle] = useState('');
   const [editSeverity, setEditSeverity] = useState('Medium');
@@ -162,15 +167,18 @@ export default function DefectsListView() {
       );
 
   // Feature options formatted for SearchableDropdown with module tag and defect counts
+  // Feature options: badge shows QA completion (QA passed / total) as a percentage
   const featureOptions = availableFeatures.map((f) => {
-    const count = allFeatureDefects.filter(
+    const items = allFeatureDefects.filter(
       (item) => String(item.featureId) === String(f.id) || String(item.featureCode || '') === String(f.id)
-    ).length;
+    );
+    const passed = items.filter((item) => normalizeStatus(item.status) === 'verified').length;
+    const pct = items.length > 0 ? Math.round((passed / items.length) * 100) : null;
     return {
       value: f.id,
       label: f.name,
-      sublabel: `${(f.moduleName || 'General').trim()} • ${f.code || f.id}`,
-      badge: count,
+      sublabel: `${(f.moduleName || 'General').trim()} • ${f.code || f.id}${items.length ? ` • ${passed}/${items.length} passed` : ''}`,
+      badge: pct === null ? '—' : `${pct}%`,
       icon: <Layers size={12} color="var(--accent-dev)" />
     };
   });
@@ -253,22 +261,45 @@ export default function DefectsListView() {
     return true;
   });
 
-  // Filtered defects including typeFilter, sorted by latest added top
+  // Newest first (tie-break by id)
+  const byLatest = (a, b) => {
+    const timeA = parseDateSafe(a.createdAt)?.getTime() || 0;
+    const timeB = parseDateSafe(b.createdAt)?.getTime() || 0;
+    if (timeA !== timeB) return timeB - timeA;
+    return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
+  };
+  const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+  const STATUS_RANK = { qa_failed: 0, open: 1, in_dev: 2, ready_for_qa: 3, verified: 4 };
+  const isQaPassed = (item) => normalizeStatus(item.status) === 'verified';
+
+  const SORTERS = {
+    // Summary: latest added first
+    summary: byLatest,
+    // Type: Critical → High → Medium → Low, QA passed always at the bottom
+    type: (a, b) =>
+      Number(isQaPassed(a)) - Number(isQaPassed(b)) ||
+      (SEVERITY_RANK[(a.severity || 'medium').toLowerCase()] ?? 2) - (SEVERITY_RANK[(b.severity || 'medium').toLowerCase()] ?? 2) ||
+      byLatest(a, b),
+    // Status: QA Failed → Need Dev → In Dev → Dev Fixed → QA Passed
+    status: (a, b) =>
+      (STATUS_RANK[normalizeStatus(a.status)] ?? 1) - (STATUS_RANK[normalizeStatus(b.status)] ?? 1) || byLatest(a, b)
+  };
+
+  // Filtered defects including typeFilter, sorted by the chosen column
+  const sorter = SORTERS[sortBy.key] || SORTERS.summary;
   const filteredItems = itemsMatchingOtherFilters
     .filter((item) => {
       if (typeFilter !== 'all' && item.type !== typeFilter) return false;
       return true;
     })
-    .sort((a, b) => {
-      const timeA = parseDateSafe(a.createdAt)?.getTime() || 0;
-      const timeB = parseDateSafe(b.createdAt)?.getTime() || 0;
-      if (timeA && timeB && timeA !== timeB) return timeB - timeA;
-      return (b.id || '').localeCompare(a.id || '', undefined, { numeric: true });
-    });
+    .sort((a, b) => (sortBy.dir === 'desc' ? -1 : 1) * sorter(a, b));
 
-  const totalFilteredAll = itemsMatchingOtherFilters.length;
-  const totalFilteredBugs = itemsMatchingOtherFilters.filter((d) => d.type === 'bug').length;
-  const totalFilteredSuggs = itemsMatchingOtherFilters.filter((d) => d.type === 'suggestion').length;
+  const toggleSort = (key) =>
+    setSortBy((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  const SortIcon = ({ col }) => {
+    if (sortBy.key !== col) return <ArrowUpDown size={11} className="th-sort-icon" />;
+    return sortBy.dir === 'asc' ? <ArrowDown size={11} className="th-sort-icon on" /> : <ArrowUp size={11} className="th-sort-icon on" />;
+  };
   const openCount = filteredItems.filter((d) => normalizeStatus(d.status) !== 'verified').length;
 
   // Add Item
@@ -583,7 +614,7 @@ export default function DefectsListView() {
                 onClick={() => setTypeFilter('all')}
                 style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
               >
-                All ({totalFilteredAll})
+                All
               </button>
               <button
                 type="button"
@@ -591,7 +622,7 @@ export default function DefectsListView() {
                 onClick={() => setTypeFilter('bug')}
                 style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
               >
-                🐛 Bugs ({totalFilteredBugs})
+                🐛 Bugs
               </button>
               <button
                 type="button"
@@ -599,7 +630,7 @@ export default function DefectsListView() {
                 onClick={() => setTypeFilter('suggestion')}
                 style={{ fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
               >
-                💡 Suggestions ({totalFilteredSuggs})
+                💡 Suggestions
               </button>
             </div>
 
@@ -692,10 +723,6 @@ export default function DefectsListView() {
 
           {/* Result Counter & Reset Button */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-              Showing <strong style={{ color: 'var(--accent-dev)' }}>{filteredItems.length}</strong> of{' '}
-              {allFeatureDefects.length} items
-            </span>
 
             {isAnyFilterActive && (
               <button
@@ -762,10 +789,26 @@ export default function DefectsListView() {
           <table className="tickets-table">
             <thead>
               <tr>
-                <th>Summary</th>
-                <th style={{ width: '70px', textAlign: 'center' }}>Type</th>
+                <th className="th-sortable" onClick={() => toggleSort('summary')} title="Sort: latest added first">
+                  <span>Summary</span> <SortIcon col="summary" />
+                </th>
+                <th
+                  className="th-sortable"
+                  style={{ width: '80px', textAlign: 'center' }}
+                  onClick={() => toggleSort('type')}
+                  title="Sort: Critical → Low (QA passed at the bottom)"
+                >
+                  <span>Type</span> <SortIcon col="type" />
+                </th>
                 <th style={{ width: '200px' }}>Linked Feature</th>
-                <th style={{ width: '150px', textAlign: 'center' }}>Status</th>
+                <th
+                  className="th-sortable"
+                  style={{ width: '150px', textAlign: 'center' }}
+                  onClick={() => toggleSort('status')}
+                  title="Sort: QA Failed → Need Dev → In Dev → Dev Fixed → QA Passed"
+                >
+                  <span>Status</span> <SortIcon col="status" />
+                </th>
                 <th style={{ width: '90px', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
