@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { hasRole, ROLES } from '../utils/roles';
 import {
   X,
   CheckSquare,
@@ -695,7 +696,7 @@ export default function TicketDetailModal() {
               >
                 <option value="">Unassigned</option>
                 {team
-                  .filter((m) => m.role === 'developer')
+                  .filter((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false))
                   .map((m) => (
                     <option key={m.id} value={m.id}>
                       👨‍💻 {m.name}
@@ -714,7 +715,7 @@ export default function TicketDetailModal() {
               >
                 <option value="">Unassigned</option>
                 {team
-                  .filter((m) => m.role === 'qa')
+                  .filter((m) => (hasRole(m, ROLES.QA) && m.active !== false))
                   .map((m) => (
                     <option key={m.id} value={m.id}>
                       🧪 {m.name}

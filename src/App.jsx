@@ -12,14 +12,18 @@ import CreateProjectModal from './components/CreateProjectModal';
 import CreateFeatureModal from './components/CreateFeatureModal';
 import EditFeatureModal from './components/EditFeatureModal';
 import CreateModuleModal from './components/CreateModuleModal';
-import UserManagementModal from './components/UserManagementModal';
 import NotificationToast from './components/NotificationToast';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import Login from './components/Login';
+import ProfilePage from './components/ProfilePage';
+import AdminActivityPage from './components/AdminActivityPage';
 
 function MainApp() {
-  const { activeTab, isAuthenticated } = useApp();
+  const { activeTab: requestedTab, isAuthenticated, needsProjectSelection } = useApp();
+  // Workspace pages stay locked until a working project is chosen (shown on My Profile)
+  const WORKSPACE_TABS = ['features', 'board', 'release'];
+  const activeTab = needsProjectSelection && WORKSPACE_TABS.includes(requestedTab) ? 'profile' : requestedTab;
 
   if (!isAuthenticated) {
     return (
@@ -38,6 +42,8 @@ function MainApp() {
         {activeTab === 'features' && <FeatureBoard />}
         {activeTab === 'board' && <DefectsListView />}
         {activeTab === 'release' && <ReleaseGate />}
+        {activeTab === 'profile' && <ProfilePage />}
+        {activeTab === 'admin' && <AdminActivityPage />}
       </main>
 
       {/* Interactive Modals & Toasts */}
@@ -49,7 +55,6 @@ function MainApp() {
       <CreateFeatureModal />
       <EditFeatureModal />
       <CreateModuleModal />
-      <UserManagementModal />
       <NotificationToast />
     </div>
   );

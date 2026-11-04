@@ -11,16 +11,17 @@ import {
   ChevronDown,
   Check,
   LogOut,
-  Plus
+  Plus,
+  UserCog,
+  Activity
 } from 'lucide-react';
+import { getRoles, ROLE_SHORT } from '../utils/roles';
 
 export default function Header() {
   const {
     theme,
     toggleTheme,
-    projects,
     activeProjectId,
-    setActiveProjectId,
     activeProject,
     setIsCreateProjectModalOpen,
     activeTab,
@@ -29,10 +30,14 @@ export default function Header() {
     allFeatureDefects = [],
     currentUser,
     logout,
-    loginAs,
-    team,
-    setIsUserManagementModalOpen
+    setIsUserManagementModalOpen,
+    isCurrentUserAdmin,
+    myProjects = [],
+    needsProjectSelection,
+    selectWorkingProject
   } = useApp();
+  const workspaceLocked = needsProjectSelection;
+  const myRoles = getRoles(currentUser);
 
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -89,7 +94,7 @@ export default function Header() {
             title="Click to switch project"
           >
             <Building2 size={15} color="var(--accent-dev)" style={{ flexShrink: 0 }} />
-            <span className="project-name-text">{activeProject?.name || 'Select Project'}</span>
+            <span className="project-name-text">{workspaceLocked ? 'Choose project' : activeProject?.name || 'Select Project'}</span>
             <span
               style={{
                 fontSize: '0.68rem',
@@ -102,7 +107,7 @@ export default function Header() {
                 flexShrink: 0
               }}
             >
-              {activeProject?.code || 'PROJ'}
+              {workspaceLocked ? '—' : activeProject?.code || 'PROJ'}
             </span>
             <ChevronDown
               size={14}
@@ -131,14 +136,19 @@ export default function Header() {
                 Switch Project
               </div>
 
-              {projects.map((p) => {
-                const isSelected = p.id === activeProjectId;
+              {myProjects.length === 0 && (
+                <div style={{ padding: '0.5rem 0.6rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  No projects assigned to you yet.
+                </div>
+              )}
+              {myProjects.map((p) => {
+                const isSelected = !workspaceLocked && p.id === activeProjectId;
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => {
-                      setActiveProjectId(p.id);
+                      selectWorkingProject(p.id);
                       setIsProjectDropdownOpen(false);
                     }}
                     className={`project-menu-item ${isSelected ? 'active' : ''}`}
@@ -166,6 +176,8 @@ export default function Header() {
                 );
               })}
 
+              {isCurrentUserAdmin && (
+              <>
               <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0.35rem 0' }} />
 
               <button
@@ -179,9 +191,11 @@ export default function Header() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                   <Plus size={14} />
-                  <span style={{ fontSize: '0.84rem' }}>Declare New Project...</span>
+                  <span style={{ fontSize: '0.84rem' }}>New Project…</span>
                 </div>
               </button>
+              </>
+              )}
             </div>
           )}
         </div>
@@ -190,8 +204,10 @@ export default function Header() {
       {/* Center: Clean 3-View Switcher */}
       <div className="nav-tabs header-center" style={{ background: 'var(--bg-surface)', padding: '3px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-subtle)' }}>
         <button
-          className={`persona-btn ${activeTab === 'features' ? 'active-all' : ''}`}
+          className={`persona-btn ${!workspaceLocked && activeTab === 'features' ? 'active-all' : ''}`}
           onClick={() => setActiveTab('features')}
+          disabled={workspaceLocked}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
           style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <Layers size={14} color="var(--accent-dev)" />
@@ -202,8 +218,10 @@ export default function Header() {
         </button>
 
         <button
-          className={`persona-btn ${activeTab === 'board' ? 'active-all' : ''}`}
+          className={`persona-btn ${!workspaceLocked && activeTab === 'board' ? 'active-all' : ''}`}
           onClick={() => setActiveTab('board')}
+          disabled={workspaceLocked}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
           style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <Bug size={14} color="var(--status-critical)" />
@@ -211,8 +229,10 @@ export default function Header() {
         </button>
 
         <button
-          className={`persona-btn ${activeTab === 'release' ? 'active-all' : ''}`}
+          className={`persona-btn ${!workspaceLocked && activeTab === 'release' ? 'active-all' : ''}`}
           onClick={() => setActiveTab('release')}
+          disabled={workspaceLocked}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
           style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <ShieldCheck size={14} color="var(--accent-qa)" />
@@ -243,12 +263,12 @@ export default function Header() {
             type="button"
             className={`user-profile-btn ${isUserMenuOpen ? 'open' : ''}`}
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            title="Account & Persona"
+            title="Account"
           >
             <div
               className="user-avatar-small"
               style={{
-                background: currentUser?.color || (currentUser?.role === 'admin' ? '#8b5cf6' : 'var(--accent-dev)'),
+                background: currentUser?.color || 'var(--accent-dev)',
                 width: '24px',
                 height: '24px',
                 fontSize: '0.68rem',
@@ -257,40 +277,13 @@ export default function Header() {
             >
               {currentUser?.initials || 'U'}
             </div>
-            <span className="user-profile-name">
-              {currentUser?.name || 'Engineer'}
-            </span>
-            <span
-              className="user-profile-role"
-              style={{
-                fontSize: '0.62rem',
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 700,
-                padding: '1px 5px',
-                borderRadius: 'var(--radius-full)',
-                background:
-                  currentUser?.role === 'developer'
-                    ? 'rgba(56, 189, 248, 0.15)'
-                    : currentUser?.role === 'admin'
-                    ? 'rgba(139, 92, 246, 0.2)'
-                    : 'rgba(16, 185, 129, 0.15)',
-                color:
-                  currentUser?.role === 'developer'
-                    ? 'var(--accent-dev)'
-                    : currentUser?.role === 'admin'
-                    ? '#c084fc'
-                    : 'var(--accent-qa)',
-                border: `1px solid ${
-                  currentUser?.role === 'developer'
-                    ? 'var(--accent-dev-border)'
-                    : currentUser?.role === 'admin'
-                    ? 'rgba(139, 92, 246, 0.45)'
-                    : 'var(--accent-qa-border)'
-                }`,
-                flexShrink: 0
-              }}
-            >
-              {currentUser?.role === 'developer' ? 'DEV' : currentUser?.role === 'admin' ? 'ADMIN' : 'QA'}
+            <span className="user-profile-name">{currentUser?.name || 'Engineer'}</span>
+            <span className="user-profile-role role-badges">
+              {myRoles.map((r) => (
+                <span key={r} className={`role-badge role-${r.toLowerCase()}`}>
+                  {ROLE_SHORT[r]}
+                </span>
+              ))}
             </span>
             <ChevronDown
               size={13}
@@ -305,167 +298,70 @@ export default function Header() {
 
           {/* User Popover Menu */}
           {isUserMenuOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                right: 0,
-                minWidth: '260px',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-medium)',
-                borderRadius: 'var(--radius-lg)',
-                boxShadow: 'var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, 0.05)',
-                padding: '0.5rem',
-                zIndex: 100,
-                backdropFilter: 'blur(20px)',
-                animation: 'dropMenuAnim 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
-              }}
-            >
-              <div style={{ padding: '0.45rem 0.65rem', borderBottom: '1px solid var(--border-subtle)', marginBottom: '0.35rem' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                  {currentUser?.name || 'Engineer'}
+            <div className="user-menu">
+              <div className="user-menu-head">
+                <div className="user-avatar-small" style={{ background: currentUser?.color || 'var(--accent-dev)', width: '34px', height: '34px', fontSize: '0.8rem' }}>
+                  {currentUser?.initials || 'U'}
                 </div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '1px' }}>
-                  {currentUser?.username ? `@${currentUser.username}` : (currentUser?.email || 'user@devbridge.io')}
-                </div>
-                <div
-                  style={{
-                    fontSize: '0.72rem',
-                    color: currentUser?.role === 'admin' ? '#c084fc' : 'var(--accent-dev)',
-                    fontWeight: 600,
-                    marginTop: '2px'
-                  }}
-                >
-                  {currentUser?.title || (currentUser?.role === 'admin' ? 'Super Administrator' : 'Team Member')}
+                <div style={{ minWidth: 0 }}>
+                  <div className="user-menu-name">{currentUser?.name || 'Engineer'}</div>
+                  <div className="user-menu-sub">
+                    {currentUser?.username ? `@${currentUser.username}` : currentUser?.email || ''}
+                    {currentUser?.title ? ` · ${currentUser.title}` : ''}
+                  </div>
                 </div>
               </div>
 
-              {/* Super Admin Manage Users Option */}
-              {currentUser?.role === 'admin' && (
-                <div style={{ padding: '0.2rem 0' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      setIsUserManagementModalOpen(true);
-                    }}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.55rem',
-                      padding: '0.5rem 0.65rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid rgba(139, 92, 246, 0.3)',
-                      background: 'rgba(139, 92, 246, 0.1)',
-                      color: '#c084fc',
-                      fontSize: '0.82rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'background 0.12s'
-                    }}
-                    className="project-menu-item"
-                  >
-                    <ShieldCheck size={15} color="#c084fc" />
-                    <span>User Management & Roles</span>
-                  </button>
-                  <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0.35rem 0' }} />
-                </div>
-              )}
-
-              {/* Switch Persona */}
-              <div style={{ padding: '0.2rem 0' }}>
-                <div style={{ padding: '0.25rem 0.65rem', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
-                  Switch Team Persona
-                </div>
-                {(team || []).slice(0, 5).map((member) => (
-                  <button
-                    key={member.id}
-                    type="button"
-                    onClick={() => {
-                      loginAs(member);
-                      setIsUserMenuOpen(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.42rem 0.65rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: 'none',
-                      background: member.id === currentUser?.id ? 'var(--accent-dev-subtle)' : 'transparent',
-                      color: member.id === currentUser?.id ? 'var(--accent-dev)' : 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      fontSize: '0.78rem',
-                      textAlign: 'left',
-                      transition: 'background 0.12s'
-                    }}
-                    className="project-menu-item"
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                      <div
-                        className="user-avatar-small"
-                        style={{
-                          background: member.color || (member.role === 'admin' ? '#8b5cf6' : 'var(--accent-dev)'),
-                          width: '18px',
-                          height: '18px',
-                          fontSize: '0.58rem'
-                        }}
-                      >
-                        {member.initials}
-                      </div>
-                      <span style={{ fontWeight: member.id === currentUser?.id ? 700 : 500 }}>
-                        {member.name}
-                      </span>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '0.64rem',
-                        textTransform: 'uppercase',
-                        fontFamily: 'var(--font-mono)',
-                        fontWeight: 700,
-                        color:
-                          member.role === 'developer'
-                            ? 'var(--accent-dev)'
-                            : member.role === 'admin'
-                            ? '#c084fc'
-                            : 'var(--accent-qa)'
-                      }}
-                    >
-                      {member.role === 'developer' ? 'Dev' : member.role === 'admin' ? 'Admin' : 'QA'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0.35rem 0' }} />
-
-              {/* Sign Out Button */}
               <button
                 type="button"
+                className="user-menu-item"
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  setActiveTab('profile');
+                }}
+              >
+                <UserCog size={15} />
+                <span>My Profile</span>
+              </button>
+
+              {/* Admin-only options */}
+              {isCurrentUserAdmin && (
+                <button
+                  type="button"
+                  className="user-menu-item admin"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    setActiveTab('profile');
+                    setIsUserManagementModalOpen(true); // tells My Profile to scroll to Users & Roles
+                  }}
+                >
+                  <ShieldCheck size={15} />
+                  <span>Users & Roles</span>
+                </button>
+              )}
+              {isCurrentUserAdmin && (
+                <button
+                  type="button"
+                  className="user-menu-item admin"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    setActiveTab('admin');
+                  }}
+                >
+                  <Activity size={15} />
+                  <span>Team Activity</span>
+                </button>
+              )}
+
+              <div className="user-menu-divider" />
+
+              <button
+                type="button"
+                className="user-menu-item danger"
                 onClick={() => {
                   setIsUserMenuOpen(false);
                   logout();
                 }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.55rem',
-                  padding: '0.5rem 0.65rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--status-critical)',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.12s'
-                }}
-                className="project-menu-item"
               >
                 <LogOut size={14} />
                 <span>Sign Out</span>

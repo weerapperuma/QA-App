@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { isAdmin } from '../utils/roles';
 import {
   Code2,
   CheckCircle2,
@@ -33,7 +34,7 @@ export default function RoleBanner() {
   );
   const activeRelease = releases[0];
 
-  if (currentUser?.role === 'admin' && (role === 'all' || role === 'admin')) {
+  if (isAdmin(currentUser) && (role === 'all' || role === 'admin')) {
     return (
       <div
         className="role-banner"
@@ -84,7 +85,10 @@ export default function RoleBanner() {
         <div className="role-banner-actions">
           <button
             className="btn"
-            onClick={() => setIsUserManagementModalOpen(true)}
+            onClick={() => {
+              setActiveTab('profile');
+              setIsUserManagementModalOpen(true);
+            }}
             style={{
               background: 'rgba(139, 92, 246, 0.2)',
               color: '#ddd6fe',

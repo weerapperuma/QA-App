@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { hasRole, ROLES } from '../utils/roles';
 import { X, Plus, Trash2, Wand2, Bug, CheckSquare } from 'lucide-react';
 
 const TEMPLATES = [
@@ -79,8 +80,8 @@ export default function CreateTicketModal() {
   const [priority, setPriority] = useState('P0');
   const [component, setComponent] = useState('Core API & Data');
   const [environment, setEnvironment] = useState('staging');
-  const [assignedDev, setAssignedDev] = useState(() => (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin');
-  const [assignedQa, setAssignedQa] = useState(() => (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin');
+  const [assignedDev, setAssignedDev] = useState(() => (team.find((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false)) || team[0])?.id || 'user-admin');
+  const [assignedQa, setAssignedQa] = useState(() => (team.find((m) => (hasRole(m, ROLES.QA) && m.active !== false)) || team[0])?.id || 'user-admin');
   const [expectedResult, setExpectedResult] = useState('');
   const [actualResult, setActualResult] = useState('');
   const [networkLog, setNetworkLog] = useState('');
@@ -90,17 +91,17 @@ export default function CreateTicketModal() {
     { id: '2', text: 'Observe unexpected behavior', checked: false }
   ]);
 
-  const devs = team.filter((m) => m.role === 'developer');
-  const qas = team.filter((m) => m.role === 'qa');
+  const devs = team.filter((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false));
+  const qas = team.filter((m) => (hasRole(m, ROLES.QA) && m.active !== false));
   const availableDevs = devs.length > 0 ? devs : team;
   const availableQas = qas.length > 0 ? qas : team;
 
   useEffect(() => {
     if (!assignedDev && team.length > 0) {
-      setAssignedDev((team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin');
+      setAssignedDev((team.find((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false)) || team[0])?.id || 'user-admin');
     }
     if (!assignedQa && team.length > 0) {
-      setAssignedQa((team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin');
+      setAssignedQa((team.find((m) => (hasRole(m, ROLES.QA) && m.active !== false)) || team[0])?.id || 'user-admin');
     }
   }, [team]);
 

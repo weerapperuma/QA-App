@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { hasRole, ROLES, publicRoleLabel } from '../utils/roles';
 import {
   X,
   Layers,
@@ -28,16 +29,16 @@ export default function CreateFeatureModal() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [assignedDev, setAssignedDev] = useState(() => (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin');
-  const [assignedQa, setAssignedQa] = useState(() => (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin');
+  const [assignedDev, setAssignedDev] = useState(() => (team.find((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false)) || team[0])?.id || 'user-admin');
+  const [assignedQa, setAssignedQa] = useState(() => (team.find((m) => (hasRole(m, ROLES.QA) && m.active !== false)) || team[0])?.id || 'user-admin');
   const [targetRelease, setTargetRelease] = useState('v1.0.0');
   const [devNotes, setDevNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // New features go to the Feature Pool by default; tick to start development right away
   const [startNow, setStartNow] = useState(false);
 
-  const devs = team.filter((m) => m.role === 'developer');
-  const qas = team.filter((m) => m.role === 'qa');
+  const devs = team.filter((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false));
+  const qas = team.filter((m) => (hasRole(m, ROLES.QA) && m.active !== false));
   const availableDevs = devs.length > 0 ? devs : team;
   const availableQas = qas.length > 0 ? qas : team;
 
@@ -60,10 +61,10 @@ export default function CreateFeatureModal() {
 
   useEffect(() => {
     if (!assignedDev && team.length > 0) {
-      setAssignedDev((team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin');
+      setAssignedDev((team.find((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false)) || team[0])?.id || 'user-admin');
     }
     if (!assignedQa && team.length > 0) {
-      setAssignedQa((team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin');
+      setAssignedQa((team.find((m) => (hasRole(m, ROLES.QA) && m.active !== false)) || team[0])?.id || 'user-admin');
     }
   }, [team]);
 
@@ -309,7 +310,7 @@ export default function CreateFeatureModal() {
                 >
                   {availableDevs.map((d) => (
                     <option key={d.id} value={d.id}>
-                      👨‍💻 {d.name} ({d.role})
+                      👨‍💻 {d.name} ({publicRoleLabel(d)})
                     </option>
                   ))}
                 </select>
@@ -324,7 +325,7 @@ export default function CreateFeatureModal() {
                 >
                   {availableQas.map((q) => (
                     <option key={q.id} value={q.id}>
-                      🛡️ {q.name} ({q.role})
+                      🛡️ {q.name} ({publicRoleLabel(q)})
                     </option>
                   ))}
                 </select>

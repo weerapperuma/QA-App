@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import {
   INITIAL_PROJECTS,
@@ -23,6 +23,7 @@ import {
   deleteUserFromFirestore,
   subscribeProjects,
   saveProjectToFirestore,
+  deleteProjectFromFirestore,
   subscribeFeatures,
   saveFeatureToFirestore,
   saveFeaturesOrderToFirestore,
@@ -46,6 +47,17 @@ import {
   findUserInFirestore
 } from '../services/firebaseService';
 import { parseDateSafe } from '../utils/dateUtils';
+import {
+  ROLES,
+  normalizeUser,
+  hasRole,
+  isAdmin,
+  getRoles,
+  getViewRole,
+  defaultTitleForRoles,
+  defaultColorForRoles,
+  makeInitials
+} from '../utils/roles';
 
 const AppContext = createContext();
 
@@ -63,7 +75,8 @@ const STORAGE_KEYS = {
   ENVS: 'devbridge_envs_v3',
   RELEASES: 'devbridge_releases_v3',
   THEME: 'devbridge_theme',
-  FEATURE_MODULE_FILTER: 'devbridge_feature_module_filter'
+  FEATURE_MODULE_FILTER: 'devbridge_feature_module_filter',
+  PROJECT_CHOSEN: 'devbridge_project_chosen'
 };
 
 // Helper to deduplicate features, bugs, and suggestions
@@ -128,7 +141,7 @@ export function AppProvider({ children }) {
   });
 
   // Current Logged-in User
-  const [currentUser, setCurrentUser] = useState(() => {
+  const [currentUserRaw, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
       return saved ? JSON.parse(saved) : null;
@@ -137,7 +150,7 @@ export function AppProvider({ children }) {
     }
   });
 
-  const isAuthenticated = !!currentUser;
+  const isAuthenticated = !!currentUserRaw;
 
   // Current Role: 'all' | 'developer' | 'qa'
   const [role, setRole] = useState(() => {
@@ -275,7 +288,7 @@ export function AppProvider({ children }) {
   const [isCreateModuleModalOpen, setIsCreateModuleModalOpen] = useState(false);
 
   // Main Team & Users State (Persisted in LocalStorage)
-  const [team, setTeam] = useState(() => {
+  const [teamRaw, setTeam] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TEAM);
       return saved ? JSON.parse(saved) : INITIAL_TEAM;
@@ -283,6 +296,43 @@ export function AppProvider({ children }) {
       return INITIAL_TEAM;
     }
   });
+  // Normalized team: every user has `roles` (ADMIN/DEVELOPER/QA) + a safe legacy `role`
+  const team = useMemo(() => (teamRaw || []).map(normalizeUser), [teamRaw]);
+
+  // Logged-in user, always refreshed from the team roster (so role/profile edits apply live)
+  const currentUser = useMemo(() => {
+    if (!currentUserRaw) return null;
+    const fresh = team.find((u) => u.id === currentUserRaw.id);
+    return normalizeUser(fresh || currentUserRaw);
+  }, [currentUserRaw, team]);
+  const isCurrentUserAdmin = isAdmin(currentUser);
+
+  // Projects this user may work on: admins see all, others only projects they're assigned to
+  const myProjects = useMemo(() => {
+    if (!currentUser) return [];
+    if (isAdmin(currentUser)) return projects || [];
+    return (projects || []).filter((p) => (p.memberIds || []).includes(currentUser.id));
+  }, [projects, currentUser]);
+
+  // Each sign-in starts on My Profile until the user picks a working project
+  const [projectChosen, setProjectChosen] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.PROJECT_CHOSEN) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PROJECT_CHOSEN, projectChosen ? 'true' : 'false');
+  }, [projectChosen]);
+
+  const needsProjectSelection = !projectChosen || !myProjects.some((p) => p.id === activeProjectId);
+
+  const selectWorkingProject = (projectId) => {
+    if (!myProjects.some((p) => p.id === projectId)) return;
+    setActiveProjectId(projectId);
+    setProjectChosen(true);
+  };
 
   const [isUserManagementModalOpen, setIsUserManagementModalOpen] = useState(false);
 
@@ -404,8 +454,8 @@ export function AppProvider({ children }) {
   }, [releases]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.TEAM, JSON.stringify(team));
-  }, [team]);
+    localStorage.setItem(STORAGE_KEYS.TEAM, JSON.stringify(teamRaw));
+  }, [teamRaw]);
 
   // Firebase Initialization & Real-Time Firestore Sync
   useEffect(() => {
@@ -618,15 +668,22 @@ export function AppProvider({ children }) {
 
   // Auth Sync & Methods
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
+    if (currentUserRaw) {
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUserRaw));
     } else {
       localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
     }
-  }, [currentUser]);
+  }, [currentUserRaw]);
 
   // Super Admin: Add new user with username, password, role
-  const addUser = async ({ username, password, role = 'developer', name = '', title = '' }) => {
+  const addUser = async ({ username, password, roles, role, name = '', title = '' }) => {
+    if (!isCurrentUserAdmin) {
+      return { success: false, error: 'Only admins can create users.' };
+    }
+    const userRoles = getRoles({ roles: roles || (role ? [role] : [ROLES.DEVELOPER]) });
+    if (userRoles.length === 0) {
+      return { success: false, error: 'Select at least one role.' };
+    }
     const trimmedUser = (username || '').trim().toLowerCase();
     if (!trimmedUser) {
       addToast('Username is required.', 'warning');
@@ -644,22 +701,103 @@ export function AppProvider({ children }) {
       password: password || '123',
       name: name?.trim() || username.trim(),
       email: `${trimmedUser}@devbridge.io`,
-      role: role || 'developer',
-      title: title?.trim() || (role === 'developer' ? 'Software Developer' : role === 'qa' ? 'QA Engineer' : 'Super Administrator'),
-      initials: (name || username).substring(0, 2).toUpperCase(),
-      color: role === 'developer' ? '#0284c7' : role === 'qa' ? '#10b981' : '#8b5cf6'
+      roles: userRoles,
+      title: title?.trim() || defaultTitleForRoles(userRoles),
+      initials: makeInitials(name || username),
+      color: defaultColorForRoles(userRoles)
     };
 
     setTeam((prev) => [...prev, newUser]);
     if (firebaseStatus === 'connected') {
       await saveUserToFirestore(newUser);
     }
-    addToast(`User "${newUser.name}" (@${newUser.username}) created as ${newUser.role.toUpperCase()}!`, 'success', 'User Created');
+    addToast(`User "${newUser.name}" (@${newUser.username}) created as ${userRoles.join(' + ')}.`, 'success', 'User Created');
     return { success: true, user: newUser };
+  };
+
+  // Update a user profile.
+  // - Anyone can edit their own name, username, email, title, color and password
+  //   (password change requires the current password).
+  // - Only admins can edit other users, change roles, or reset passwords without the old one.
+  const updateUser = async (userId, changes = {}, { currentPassword } = {}) => {
+    const target = team.find((u) => u.id === userId);
+    if (!target || !currentUser) return { success: false, error: 'User not found.' };
+    const isSelf = target.id === currentUser.id;
+    const actingAdmin = isAdmin(currentUser);
+    if (!isSelf && !actingAdmin) return { success: false, error: 'You can only edit your own profile.' };
+
+    const patch = {};
+
+    if (changes.name !== undefined) {
+      const name = changes.name.trim();
+      if (!name) return { success: false, error: 'Name cannot be empty.' };
+      patch.name = name;
+      patch.initials = makeInitials(name);
+    }
+
+    if (changes.username !== undefined) {
+      const username = changes.username.trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,30}$/.test(username)) {
+        return { success: false, error: 'Username must be 3–30 characters: letters, numbers, dot, dash or underscore.' };
+      }
+      if (team.some((u) => u.id !== userId && (u.username || '').toLowerCase() === username)) {
+        return { success: false, error: `Username "${username}" is already taken.` };
+      }
+      patch.username = username;
+    }
+
+    if (changes.email !== undefined) {
+      const email = changes.email.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { success: false, error: 'Enter a valid email address.' };
+      }
+      patch.email = email;
+    }
+
+    if (changes.title !== undefined) patch.title = changes.title.trim();
+    if (changes.color !== undefined) patch.color = changes.color;
+
+    if (changes.password !== undefined && changes.password !== '') {
+      if (changes.password.length < 3) return { success: false, error: 'Password must be at least 3 characters.' };
+      const resettingOther = actingAdmin && !isSelf;
+      if (!resettingOther && target.password && target.password !== currentPassword) {
+        return { success: false, error: 'Current password is incorrect.' };
+      }
+      patch.password = changes.password;
+    }
+
+    if (changes.roles !== undefined) {
+      if (!actingAdmin) return { success: false, error: 'Only admins can change roles.' };
+      const newRoles = getRoles({ roles: changes.roles });
+      if (newRoles.length === 0) return { success: false, error: 'Select at least one role.' };
+      const losingAdmin = isAdmin(target) && !newRoles.includes(ROLES.ADMIN);
+      if (losingAdmin && team.filter((u) => isAdmin(u)).length <= 1) {
+        return { success: false, error: 'At least one admin must remain.' };
+      }
+      patch.roles = newRoles;
+    }
+
+    if (Object.keys(patch).length === 0) return { success: true, user: target };
+
+    // Store canonical fields only (drop the legacy lower-case role)
+    const { role: _legacyRole, ...rest } = target;
+    const updatedUser = { ...rest, ...patch, roles: patch.roles || target.roles, updatedAt: new Date().toISOString() };
+
+    setTeam((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    if (isSelf) setCurrentUser(updatedUser);
+    if (firebaseStatus === 'connected') {
+      await saveUserToFirestore(updatedUser);
+    }
+    return { success: true, user: normalizeUser(updatedUser) };
   };
 
   // Super Admin: Delete user
   const deleteUser = async (userId) => {
+    if (!isCurrentUserAdmin) return false;
+    if (userId === currentUser?.id) {
+      addToast('You cannot delete your own account.', 'warning');
+      return false;
+    }
     if (userId === 'user-admin') {
       addToast('Cannot delete the root Super Admin account.', 'warning');
       return false;
@@ -672,6 +810,136 @@ export function AppProvider({ children }) {
     return true;
   };
 
+
+  // ===== User activity tracking (logins, active time) & account status =====
+  // Session: { id, start, lastSeenAt, endedAt?, activeMs }
+  const ACTIVITY_TICK_MS = 60 * 1000;          // heartbeat interval
+  const IDLE_AFTER_MS = 5 * 60 * 1000;         // no input for 5 min = idle (time not counted)
+  const MAX_SESSIONS = 20;
+
+  const teamRawRef = useRef(teamRaw);
+  teamRawRef.current = teamRaw;
+  const firebaseStatusRef = useRef(firebaseStatus);
+  firebaseStatusRef.current = firebaseStatus;
+
+  // Patch one user record without touching other fields; optionally persist to Firestore
+  const patchUserRecord = (userId, mutate, fallbackUser = null) => {
+    const target = (teamRawRef.current || []).find((u) => u.id === userId) || fallbackUser;
+    if (!target) return null;
+    const updated = { ...target, ...mutate(target) };
+    setTeam((prev) =>
+      prev.some((u) => u.id === userId) ? prev.map((u) => (u.id === userId ? updated : u)) : [...prev, updated]
+    );
+    if (firebaseStatusRef.current === 'connected') {
+      saveUserToFirestore(updated);
+    }
+    return updated;
+  };
+
+  const closeOpenSession = (sessions, iso) =>
+    sessions.map((s, i) => (i === 0 && !s.endedAt ? { ...s, endedAt: s.lastSeenAt || iso } : s));
+
+  const recordLogin = (user) => {
+    const iso = new Date().toISOString();
+    patchUserRecord(
+      user.id,
+      (u) => {
+        const prevSessions = closeOpenSession(Array.isArray(u.sessions) ? u.sessions : [], iso);
+        return {
+          lastLoginAt: iso,
+          lastActiveAt: iso,
+          loginCount: (u.loginCount || 0) + 1,
+          sessions: [
+            { id: `ses-${Date.now().toString(36)}`, start: iso, lastSeenAt: iso, activeMs: 0 },
+            ...prevSessions
+          ].slice(0, MAX_SESSIONS)
+        };
+      },
+      user
+    );
+  };
+
+  const recordLogout = (userId) => {
+    const iso = new Date().toISOString();
+    patchUserRecord(userId, (u) => ({
+      lastActiveAt: iso,
+      sessions: (Array.isArray(u.sessions) ? u.sessions : []).map((s, i) =>
+        i === 0 && !s.endedAt ? { ...s, lastSeenAt: iso, endedAt: iso } : s
+      )
+    }));
+  };
+
+  // Heartbeat: while the tab is visible and the user interacted recently, add active time
+  const lastInteractionRef = useRef(Date.now());
+  const patchUserRecordRef = useRef(patchUserRecord);
+  patchUserRecordRef.current = patchUserRecord;
+  const activeUserId = currentUserRaw?.id;
+  useEffect(() => {
+    if (!activeUserId) return undefined;
+    const mark = () => {
+      lastInteractionRef.current = Date.now();
+    };
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((ev) => window.addEventListener(ev, mark, { passive: true }));
+    mark();
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (document.visibilityState !== 'visible' || now - lastInteractionRef.current > IDLE_AFTER_MS) return;
+      const iso = new Date(now).toISOString();
+      patchUserRecordRef.current(activeUserId, (u) => {
+        const sessions = Array.isArray(u.sessions) ? [...u.sessions] : [];
+        if (sessions[0] && !sessions[0].endedAt) {
+          sessions[0] = { ...sessions[0], lastSeenAt: iso, activeMs: (sessions[0].activeMs || 0) + ACTIVITY_TICK_MS };
+        } else {
+          // e.g. app reopened after a closed session: start a new one
+          sessions.unshift({ id: `ses-${now.toString(36)}`, start: iso, lastSeenAt: iso, activeMs: ACTIVITY_TICK_MS });
+        }
+        return {
+          lastActiveAt: iso,
+          totalActiveMs: (u.totalActiveMs || 0) + ACTIVITY_TICK_MS,
+          sessions: sessions.slice(0, MAX_SESSIONS)
+        };
+      });
+    }, ACTIVITY_TICK_MS);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, mark));
+      clearInterval(timer);
+    };
+  }, [activeUserId]);
+
+  // Admin: activate / deactivate an account (deactivated users can't sign in or be assigned)
+  const setUserActive = async (userId, active) => {
+    if (!isCurrentUserAdmin) return { success: false, error: 'Only admins can change account status.' };
+    const target = team.find((u) => u.id === userId);
+    if (!target) return { success: false, error: 'User not found.' };
+    if (userId === currentUser?.id) return { success: false, error: 'You cannot deactivate your own account.' };
+    if (!active && isAdmin(target) && team.filter((u) => isAdmin(u) && u.active !== false).length <= 1) {
+      return { success: false, error: 'At least one active admin must remain.' };
+    }
+    const iso = new Date().toISOString();
+    patchUserRecord(userId, () =>
+      active
+        ? { active: true, reactivatedAt: iso, deactivatedAt: null, deactivatedBy: null }
+        : { active: false, deactivatedAt: iso, deactivatedBy: currentUser?.id || '' }
+    );
+    addToast(
+      `${target.name} ${active ? 'reactivated' : 'deactivated'}.`,
+      active ? 'success' : 'info',
+      active ? 'Account Active' : 'Account Deactivated'
+    );
+    return { success: true };
+  };
+
+  // If this account gets deactivated (e.g. by an admin on another device), sign out
+  useEffect(() => {
+    if (currentUser && currentUser.active === false) {
+      setCurrentUser(null);
+      addToast('Your account has been deactivated. Contact your workspace admin.', 'warning', 'Signed Out');
+    }
+  }, [currentUser?.active]);
+
   // Direct login with username & password (NO ROLE SELECTION NEEDED!)
   const loginWithCredentials = async (username, password) => {
     const trimmed = (username || '').trim().toLowerCase();
@@ -681,11 +949,15 @@ export function AppProvider({ children }) {
         (m.email && m.email.toLowerCase() === trimmed)
     );
 
+    // Raw stored record (not normalized) — used when writing login activity back
+    let rawUser = user ? (teamRaw || []).find((u) => u.id === user.id) : null;
+
     // If not yet loaded in local state, query Firestore directly
     if (!user && firebaseStatus === 'connected') {
       const remoteUser = await findUserInFirestore(trimmed);
       if (remoteUser) {
-        user = remoteUser;
+        rawUser = remoteUser;
+        user = normalizeUser(remoteUser);
         setTeam((prev) => {
           if (!prev.some((u) => u.id === remoteUser.id)) {
             return [...prev, remoteUser];
@@ -703,9 +975,16 @@ export function AppProvider({ children }) {
       return { success: false, error: 'Incorrect password. (Default is 123)' };
     }
 
+    if (user.active === false) {
+      return { success: false, error: 'This account is deactivated. Contact your workspace admin.' };
+    }
+
     setCurrentUser(user);
-    setRole(user.role === 'admin' ? 'all' : user.role);
-    addToast(`Welcome, ${user.name}! Logged in as ${user.role.toUpperCase()}.`, 'success', 'Login Successful');
+    setRole(getViewRole(user));
+    setProjectChosen(false);
+    setActiveTab('profile');
+    recordLogin(rawUser || user);
+    addToast(`Welcome, ${user.name}!`, 'success', 'Login Successful');
     return { success: true, user };
   };
 
@@ -737,13 +1016,9 @@ export function AppProvider({ children }) {
     addToast(`Welcome back, ${user.name}! Signed in as ${user.role.toUpperCase()}.`, 'success', 'Signed In');
   };
 
-  const loginAs = (member) => {
-    setCurrentUser(member);
-    setRole(member.role === 'admin' ? 'all' : member.role);
-    addToast(`Signed in as ${member.name} (${member.title})`, 'success', 'Login Successful');
-  };
-
   const logout = () => {
+    if (currentUserRaw?.id) recordLogout(currentUserRaw.id);
+    setProjectChosen(false);
     setCurrentUser(null);
     addToast('You have been signed out.', 'info', 'Logged Out');
   };
@@ -893,6 +1168,10 @@ export function AppProvider({ children }) {
 
   // Project Actions
   const createProject = async (projectData) => {
+    if (!isCurrentUserAdmin) {
+      addToast('Only admins can create projects.', 'warning');
+      return { success: false };
+    }
     const code = projectData.code ? projectData.code.toUpperCase() : projectData.name.substring(0, 4).toUpperCase();
     const newProj = {
       id: 'proj-' + Date.now().toString(36),
@@ -900,15 +1179,58 @@ export function AppProvider({ children }) {
       code,
       description: projectData.description || '',
       category: projectData.category || 'General Software',
+      memberIds: Array.from(new Set([...(projectData.memberIds || []), currentUser?.id].filter(Boolean))),
       createdAt: new Date().toISOString().split('T')[0]
     };
     setProjects((prev) => [...prev, newProj]);
-    setActiveProjectId(newProj.id);
     setIsCreateProjectModalOpen(false);
     if (firebaseStatus === 'connected') {
       await saveProjectToFirestore(newProj);
     }
-    addToast(`Project "${newProj.name}" created!`, 'success', 'Project Declared');
+    addToast(`Project "${newProj.name}" created. Assign team members to give them access.`, 'success', 'Project Created');
+    return { success: true, project: newProj };
+  };
+
+  // Admin: edit project details or members (memberIds)
+  const updateProject = async (projectId, changes = {}) => {
+    if (!isCurrentUserAdmin) return { success: false, error: 'Only admins can manage projects.' };
+    const proj = (projects || []).find((p) => p.id === projectId);
+    if (!proj) return { success: false, error: 'Project not found.' };
+    const patchData = {};
+    if (changes.name !== undefined) {
+      if (!changes.name.trim()) return { success: false, error: 'Project name is required.' };
+      patchData.name = changes.name.trim();
+    }
+    if (changes.code !== undefined) {
+      const code = changes.code.trim().toUpperCase();
+      if (!code) return { success: false, error: 'Project code is required.' };
+      if ((projects || []).some((p) => p.id !== projectId && (p.code || '').toUpperCase() === code)) {
+        return { success: false, error: `Code "${code}" is already used by another project.` };
+      }
+      patchData.code = code;
+    }
+    if (changes.description !== undefined) patchData.description = changes.description.trim();
+    if (changes.memberIds !== undefined) patchData.memberIds = Array.from(new Set(changes.memberIds));
+    const updated = { ...proj, ...patchData, updatedAt: new Date().toISOString() };
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? updated : p)));
+    if (firebaseStatus === 'connected') {
+      await saveProjectToFirestore(updated);
+    }
+    return { success: true, project: updated };
+  };
+
+  // Admin: delete a project (its features/modules are kept in storage but no longer reachable)
+  const deleteProject = async (projectId) => {
+    if (!isCurrentUserAdmin) return { success: false, error: 'Only admins can delete projects.' };
+    if ((projects || []).length <= 1) return { success: false, error: 'At least one project must remain.' };
+    const proj = (projects || []).find((p) => p.id === projectId);
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    if (activeProjectId === projectId) setProjectChosen(false);
+    if (firebaseStatus === 'connected') {
+      await deleteProjectFromFirestore(projectId);
+    }
+    addToast(`Project "${proj?.name || projectId}" deleted.`, 'info', 'Project Deleted');
+    return { success: true };
   };
 
   // Module Actions (Modules are groupings for features, NOT board tickets!)
@@ -1047,8 +1369,8 @@ export function AppProvider({ children }) {
   };
 
   const createFeature = async (featData, options = {}) => {
-    const defaultDev = (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
-    const defaultQa = (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
+    const defaultDev = (team.find((m) => hasRole(m, ROLES.DEVELOPER)) || team[0])?.id || 'user-admin';
+    const defaultQa = (team.find((m) => hasRole(m, ROLES.QA)) || team[0])?.id || 'user-admin';
     const moduleName = (featData.moduleName || 'General').trim();
 
     // Auto-create module in modules if typed and not yet registered
@@ -1566,8 +1888,8 @@ export function AppProvider({ children }) {
       bugId = `BUG-${feat.code || 'FEAT'}-${bump}`;
     }
 
-    const defaultDev = feat.assignedDev || (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
-    const defaultQa = (currentUser && currentUser.id) || (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
+    const defaultDev = feat.assignedDev || (team.find((m) => hasRole(m, ROLES.DEVELOPER)) || team[0])?.id || 'user-admin';
+    const defaultQa = (currentUser && currentUser.id) || (team.find((m) => hasRole(m, ROLES.QA)) || team[0])?.id || 'user-admin';
     const newBug = {
       id: bugId,
       title: bugData.title,
@@ -1774,7 +2096,7 @@ export function AppProvider({ children }) {
       suggId = `SUGG-${feat.code || 'FEAT'}-${bump}`;
     }
 
-    const author = (currentUser && currentUser.id) || (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
+    const author = (currentUser && currentUser.id) || (team.find((m) => hasRole(m, ROLES.QA)) || team[0])?.id || 'user-admin';
     const newSugg = {
       id: suggId,
       title: suggData.title,
@@ -2182,7 +2504,7 @@ export function AppProvider({ children }) {
         devNote: updatedData.devNote !== undefined ? updatedData.devNote : (existingSugg.devNote || ''),
         status: updatedData.status || existingSugg.status || 'open',
         reportedBy: existingSugg.reportedBy || (currentUser && currentUser.id) || 'user-admin',
-        assignedDev: feat.assignedDev || (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin',
+        assignedDev: feat.assignedDev || (team.find((m) => hasRole(m, ROLES.DEVELOPER)) || team[0])?.id || 'user-admin',
         createdAt: existingSugg.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -2362,8 +2684,8 @@ export function AppProvider({ children }) {
 
   const createTicket = async (ticketData) => {
     const nextNumber = tickets.length + 101;
-    const defaultDev = (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
-    const defaultQa = (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
+    const defaultDev = (team.find((m) => hasRole(m, ROLES.DEVELOPER)) || team[0])?.id || 'user-admin';
+    const defaultQa = (team.find((m) => hasRole(m, ROLES.QA)) || team[0])?.id || 'user-admin';
     const newTicket = {
       id: `QA-${nextNumber}`,
       title: ticketData.title || 'Untitled Defect',
@@ -2477,8 +2799,8 @@ export function AppProvider({ children }) {
 
   const signOffRelease = async (releaseId, signerRole, note) => {
     const signer = currentUser || (signerRole === 'developer'
-      ? team.find((m) => m.role === 'developer')
-      : team.find((m) => m.role === 'qa'));
+      ? team.find((m) => hasRole(m, ROLES.DEVELOPER))
+      : team.find((m) => hasRole(m, ROLES.QA)));
 
     let updatedRelObj = null;
 
@@ -2614,6 +2936,14 @@ export function AppProvider({ children }) {
         filters,
         setFilters,
         team,
+        updateUser,
+        isCurrentUserAdmin,
+        myProjects,
+        needsProjectSelection,
+        selectWorkingProject,
+        updateProject,
+        deleteProject,
+        setUserActive,
         projects,
         activeProjectId,
         setActiveProjectId,
@@ -2720,7 +3050,6 @@ export function AppProvider({ children }) {
         currentUser,
         isAuthenticated,
         login,
-        loginAs,
         logout,
         addUser,
         deleteUser,

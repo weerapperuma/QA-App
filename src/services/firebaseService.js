@@ -8,6 +8,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { firestoreDb } from './firebase';
+import { isAdmin } from '../utils/roles';
 
 /**
  * Sanitizes object to remove undefined values before sending to Firestore.
@@ -61,7 +62,7 @@ export function subscribeUsers(onUsersUpdate, fallbackUsers = []) {
       let hasAdmin = false;
       snapshot.forEach((docSnap) => {
         const u = { id: docSnap.id, ...docSnap.data() };
-        if (u.id === 'user-admin' || u.role === 'admin') hasAdmin = true;
+        if (u.id === 'user-admin' || isAdmin(u)) hasAdmin = true;
         users.push(u);
       });
 
@@ -183,6 +184,17 @@ export function subscribeProjects(onProjectsUpdate, fallbackProjects = []) {
   );
 
   return unsubscribe;
+}
+
+export async function deleteProjectFromFirestore(projectId) {
+  if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
+  try {
+    await deleteDoc(doc(firestoreDb, 'projects', projectId));
+    return { success: true };
+  } catch (err) {
+    console.error('deleteProjectFromFirestore error:', err);
+    return { success: false, error: err.message };
+  }
 }
 
 export async function saveProjectToFirestore(project) {

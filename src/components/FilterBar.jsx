@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { hasRole, ROLES } from '../utils/roles';
 import { Search, X, Filter } from 'lucide-react';
 
 export default function FilterBar() {
@@ -32,8 +33,8 @@ export default function FilterBar() {
     });
   };
 
-  const devs = team.filter((m) => m.role === 'developer');
-  const qas = team.filter((m) => m.role === 'qa');
+  const devs = team.filter((m) => hasRole(m, ROLES.DEVELOPER));
+  const qas = team.filter((m) => hasRole(m, ROLES.QA));
 
   return (
     <div className="filter-bar">

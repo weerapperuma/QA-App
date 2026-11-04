@@ -18,8 +18,8 @@ export const INITIAL_TEAM = [
     password: '123',
     name: 'Super Admin',
     email: 'admin@devbridge.io',
-    role: 'admin',
-    title: 'Super Administrator',
+    roles: ['ADMIN', 'DEVELOPER'],
+    title: 'Team Lead',
     initials: 'SA',
     color: '#8b5cf6'
   }

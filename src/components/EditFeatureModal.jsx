@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { hasRole, ROLES, publicRoleLabel } from '../utils/roles';
 import {
   X,
   Layers,
@@ -33,8 +34,8 @@ export default function EditFeatureModal() {
   const [prLink, setPrLink] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const devs = team.filter((m) => m.role === 'developer');
-  const qas = team.filter((m) => m.role === 'qa');
+  const devs = team.filter((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false));
+  const qas = team.filter((m) => (hasRole(m, ROLES.QA) && m.active !== false));
   const availableDevs = devs.length > 0 ? devs : team;
   const availableQas = qas.length > 0 ? qas : team;
 
@@ -326,7 +327,7 @@ export default function EditFeatureModal() {
                 >
                   {availableDevs.map((d) => (
                     <option key={d.id} value={d.id}>
-                      👨‍💻 {d.name} ({d.role})
+                      👨‍💻 {d.name} ({publicRoleLabel(d)})
                     </option>
                   ))}
                 </select>
@@ -341,7 +342,7 @@ export default function EditFeatureModal() {
                 >
                   {availableQas.map((q) => (
                     <option key={q.id} value={q.id}>
-                      🕵️‍♀️ {q.name} ({q.role})
+                      🕵️‍♀️ {q.name} ({publicRoleLabel(q)})
                     </option>
                   ))}
                 </select>
