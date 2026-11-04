@@ -18,12 +18,13 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 import Login from './components/Login';
 import ProfilePage from './components/ProfilePage';
+import FutureImprovementsPage from './components/FutureImprovementsPage';
 import AdminActivityPage from './components/AdminActivityPage';
 
 function MainApp() {
   const { activeTab: requestedTab, isAuthenticated, needsProjectSelection, currentUser } = useApp();
   // Workspace pages stay locked until a working project is chosen (shown on My Profile)
-  const WORKSPACE_TABS = ['features', 'board', 'release'];
+  const WORKSPACE_TABS = ['features', 'board', 'release', 'improvements'];
   const activeTab = needsProjectSelection && WORKSPACE_TABS.includes(requestedTab) ? 'profile' : requestedTab;
 
   if (!isAuthenticated) {
@@ -43,6 +44,7 @@ function MainApp() {
         {activeTab === 'features' && <FeatureBoard />}
         {activeTab === 'board' && <DefectsListView />}
         {activeTab === 'release' && <ReleaseGate />}
+        {activeTab === 'improvements' && <FutureImprovementsPage />}
         {activeTab === 'profile' && <ProfilePage />}
         {activeTab === 'admin' && <AdminActivityPage />}
       </main>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { FutureImprovementsPanel } from './FutureImprovements';
+import { FutureImprovementsSummary } from './FutureImprovements';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -386,7 +386,7 @@ ${activeRelease.changeSummary}
       </div>
 
       {/* Deferred work from closed features */}
-      <FutureImprovementsPanel />
+      <FutureImprovementsSummary />
     </div>
   );
 }

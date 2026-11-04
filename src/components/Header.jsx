@@ -13,7 +13,8 @@ import {
   LogOut,
   Plus,
   UserCog,
-  Activity
+  Activity,
+  Hourglass
 } from 'lucide-react';
 import { getRoles, ROLE_SHORT } from '../utils/roles';
 
@@ -34,8 +35,10 @@ export default function Header() {
     isCurrentUserAdmin,
     myProjects = [],
     needsProjectSelection,
-    selectWorkingProject
+    selectWorkingProject,
+    projectFutureItems = []
   } = useApp();
+  const openImprovements = projectFutureItems.filter((i) => i.status !== 'done').length;
   const workspaceLocked = needsProjectSelection;
   const myRoles = getRoles(currentUser);
 
@@ -237,6 +240,22 @@ export default function Header() {
         >
           <ShieldCheck size={14} color="var(--accent-qa)" />
           <span>Release Gate</span>
+        </button>
+
+        <button
+          className={`persona-btn ${!workspaceLocked && activeTab === 'improvements' ? 'active-all' : ''}`}
+          onClick={() => setActiveTab('improvements')}
+          disabled={workspaceLocked}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Future Improvements'}
+          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
+        >
+          <Hourglass size={14} color="#f59e0b" />
+          <span>Improvements</span>
+          {openImprovements > 0 && (
+            <span className="nav-tab-badge" style={{ marginLeft: '4px' }}>
+              {openImprovements}
+            </span>
+          )}
         </button>
       </div>
 
