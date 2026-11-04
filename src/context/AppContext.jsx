@@ -76,7 +76,7 @@ const STORAGE_KEYS = {
   RELEASES: 'devbridge_releases_v3',
   THEME: 'devbridge_theme',
   FEATURE_MODULE_FILTER: 'devbridge_feature_module_filter',
-  PROJECT_CHOSEN: 'devbridge_project_chosen'
+  LAST_PROJECT: 'devbridge_last_project'
 };
 
 // Helper to deduplicate features, bugs, and suggestions
@@ -297,7 +297,15 @@ export function AppProvider({ children }) {
     }
   });
   // Normalized team: every user has `roles` (ADMIN/DEVELOPER/QA) + a safe legacy `role`
-  const team = useMemo(() => (teamRaw || []).map(normalizeUser), [teamRaw]);
+  const team = useMemo(() => {
+    const byId = new Map();
+    (teamRaw || []).forEach((u) => {
+      if (!u || !u.id) return;
+      const prev = byId.get(u.id);
+      if (!prev || (u.updatedAt || '') >= (prev.updatedAt || '')) byId.set(u.id, { ...prev, ...u, _docId: prev?._docId || u._docId });
+    });
+    return Array.from(byId.values()).map(normalizeUser);
+  }, [teamRaw]);
 
   // Logged-in user, always refreshed from the team roster (so role/profile edits apply live)
   const currentUser = useMemo(() => {
@@ -307,31 +315,58 @@ export function AppProvider({ children }) {
   }, [currentUserRaw, team]);
   const isCurrentUserAdmin = isAdmin(currentUser);
 
-  // Projects this user may work on: admins see all, others only projects they're assigned to
-  const myProjects = useMemo(() => {
-    if (!currentUser) return [];
-    if (isAdmin(currentUser)) return projects || [];
-    return (projects || []).filter((p) => (p.memberIds || []).includes(currentUser.id));
-  }, [projects, currentUser]);
+  // Projects a user may work on: admins see all, others only projects they're assigned to
+  const getAccessibleProjects = (user) => {
+    if (!user) return [];
+    if (isAdmin(user)) return projects || [];
+    return (projects || []).filter((p) => (p.memberIds || []).includes(user.id));
+  };
+  const myProjects = useMemo(() => getAccessibleProjects(currentUser), [projects, currentUser]);
 
-  // Each sign-in starts on My Profile until the user picks a working project
-  const [projectChosen, setProjectChosen] = useState(() => {
+  // Each user's last working project is remembered (this browser + their user record),
+  // so sign-in and refresh go straight back to it.
+  const lastProjectKey = (userId) => `${STORAGE_KEYS.LAST_PROJECT}_${userId}`;
+  const getRememberedProjectId = (user) => {
+    if (!user) return null;
     try {
-      return localStorage.getItem(STORAGE_KEYS.PROJECT_CHOSEN) === 'true';
+      return localStorage.getItem(lastProjectKey(user.id)) || user.lastProjectId || null;
     } catch {
-      return false;
+      return user.lastProjectId || null;
     }
-  });
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PROJECT_CHOSEN, projectChosen ? 'true' : 'false');
-  }, [projectChosen]);
+  };
+  // Pick the project to open for a user: remembered one, or their only project
+  const resolveWorkingProjectId = (user) => {
+    const accessible = getAccessibleProjects(user);
+    const remembered = getRememberedProjectId(user);
+    if (remembered && accessible.some((p) => p.id === remembered)) return remembered;
+    if (accessible.length === 1) return accessible[0].id;
+    return null;
+  };
 
-  const needsProjectSelection = !projectChosen || !myProjects.some((p) => p.id === activeProjectId);
+  const isProjectsLoaded = (projects || []).length > 0;
+  const needsProjectSelection = !!currentUser && !myProjects.some((p) => p.id === activeProjectId);
+
+  // Restore the user's working project automatically (after refresh, data sync, or another
+  // user having used this browser). Only ask when nothing valid can be restored.
+  useEffect(() => {
+    if (!currentUser || !isProjectsLoaded || !needsProjectSelection) return;
+    const restoreId = resolveWorkingProjectId(currentUser);
+    if (restoreId && restoreId !== activeProjectId) setActiveProjectId(restoreId);
+  }, [currentUser?.id, currentUser?.lastProjectId, projects, needsProjectSelection]);
 
   const selectWorkingProject = (projectId) => {
     if (!myProjects.some((p) => p.id === projectId)) return;
     setActiveProjectId(projectId);
-    setProjectChosen(true);
+    if (currentUser) {
+      try {
+        localStorage.setItem(lastProjectKey(currentUser.id), projectId);
+      } catch {
+        // ignore storage errors
+      }
+      if (currentUser.lastProjectId !== projectId) {
+        patchUserRecordRef.current?.(currentUser.id, () => ({ lastProjectId: projectId }));
+      }
+    }
   };
 
   const [isUserManagementModalOpen, setIsUserManagementModalOpen] = useState(false);
@@ -575,12 +610,12 @@ export function AppProvider({ children }) {
   };
 
   // Toast dispatcher
-  const addToast = (message, type = 'info', title = '') => {
+  const addToast = (message, type = 'info', title = '', durationMs = 4500) => {
     const id = Date.now() + Math.random().toString(36).substring(2, 6);
     setToasts((prev) => [...prev, { id, message, type, title, timestamp: new Date() }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    }, durationMs);
   };
 
   const removeToast = (id) => {
@@ -597,9 +632,25 @@ export function AppProvider({ children }) {
     targetFeatureName = null,
     targetDefectId = null,
     severity = 'info',
+    targetUserIds,
+    itemKind = null,
     meta = {}
   }) => {
     const authorName = currentUser?.name || (role === 'qa' ? 'QA Engineer' : 'Developer');
+    // Who this is personally for. Default: the feature's assigned dev / QA based on targetRole.
+    let recipients = targetUserIds;
+    if (!recipients && targetFeatureId) {
+      const tf = (features || []).find((f) => f.id === targetFeatureId);
+      if (tf) {
+        recipients =
+          targetRole === 'developer'
+            ? [tf.assignedDev]
+            : targetRole === 'qa'
+            ? [tf.assignedQa]
+            : [tf.assignedDev, tf.assignedQa];
+      }
+    }
+    recipients = Array.from(new Set((recipients || []).filter(Boolean)));
     const newNotif = {
       id: `notif-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
       projectId: activeProjectId,
@@ -610,6 +661,8 @@ export function AppProvider({ children }) {
       targetFeatureId,
       targetFeatureName,
       targetDefectId,
+      targetUserIds: recipients,
+      itemKind,
       severity,
       read: false,
       authorName,
@@ -804,7 +857,7 @@ export function AppProvider({ children }) {
     }
     setTeam((prev) => prev.filter((u) => u.id !== userId));
     if (firebaseStatus === 'connected') {
-      await deleteUserFromFirestore(userId);
+      await deleteUserFromFirestore(team.find((u) => u.id === userId) || userId);
     }
     addToast('User removed from team roster.', 'info', 'User Deleted');
     return true;
@@ -827,9 +880,13 @@ export function AppProvider({ children }) {
     const target = (teamRawRef.current || []).find((u) => u.id === userId) || fallbackUser;
     if (!target) return null;
     const updated = { ...target, ...mutate(target) };
-    setTeam((prev) =>
-      prev.some((u) => u.id === userId) ? prev.map((u) => (u.id === userId ? updated : u)) : [...prev, updated]
-    );
+    setTeam((prev) => {
+      if (!prev.some((u) => u.id === userId)) return [...prev, updated];
+      const rest = prev.filter((u) => u.id !== userId);
+      const idx = prev.findIndex((u) => u.id === userId);
+      rest.splice(idx, 0, updated);
+      return rest;
+    });
     if (firebaseStatusRef.current === 'connected') {
       saveUserToFirestore(updated);
     }
@@ -981,8 +1038,13 @@ export function AppProvider({ children }) {
 
     setCurrentUser(user);
     setRole(getViewRole(user));
-    setProjectChosen(false);
-    setActiveTab('profile');
+    const workingProjectId = resolveWorkingProjectId(user);
+    if (workingProjectId) {
+      setActiveProjectId(workingProjectId);
+      setActiveTab('features');
+    } else {
+      setActiveTab('profile');
+    }
     recordLogin(rawUser || user);
     addToast(`Welcome, ${user.name}!`, 'success', 'Login Successful');
     return { success: true, user };
@@ -1018,7 +1080,6 @@ export function AppProvider({ children }) {
 
   const logout = () => {
     if (currentUserRaw?.id) recordLogout(currentUserRaw.id);
-    setProjectChosen(false);
     setCurrentUser(null);
     addToast('You have been signed out.', 'info', 'Logged Out');
   };
@@ -1225,7 +1286,6 @@ export function AppProvider({ children }) {
     if ((projects || []).length <= 1) return { success: false, error: 'At least one project must remain.' };
     const proj = (projects || []).find((p) => p.id === projectId);
     setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    if (activeProjectId === projectId) setProjectChosen(false);
     if (firebaseStatus === 'connected') {
       await deleteProjectFromFirestore(projectId);
     }
@@ -1354,13 +1414,102 @@ export function AppProvider({ children }) {
   };
 
   // Feature Actions (Features belong to a Module and appear on the Kanban board)
+  // Optional focus inside the feature window: { featureId, tab, itemIds, ts }
+  const [featureFocus, setFeatureFocus] = useState(null);
+
   const openFeature = (featureOrId) => {
     const id = typeof featureOrId === 'object' ? featureOrId.id : featureOrId;
+    setFeatureFocus(null);
     setSelectedFeatureId(id);
   };
 
   const closeFeature = () => {
     setSelectedFeatureId(null);
+    setFeatureFocus(null);
+  };
+
+
+  // ===== Closing a feature is a deliberate, checked step =====
+  // A feature can only be closed (verified) when every defect & suggestion has passed QA,
+  // and only from the confirmation step in the feature window ({ confirmed: true }).
+  const DONE_ITEM = ['verified', 'implemented', 'qa_passed', 'qa passed', 'closed'];
+  const getFeatureCloseCheck = (feat) => {
+    const bugs = feat?.bugs || [];
+    const suggs = feat?.suggestions || [];
+    const openBugs = bugs.filter((b) => !DONE_ITEM.includes((b.status || '').toLowerCase().trim()));
+    const openSuggs = suggs.filter((s) => !DONE_ITEM.includes((s.status || '').toLowerCase().trim()));
+    return {
+      bugsTotal: bugs.length,
+      bugsPassed: bugs.length - openBugs.length,
+      suggsTotal: suggs.length,
+      suggsPassed: suggs.length - openSuggs.length,
+      openBugs,
+      openSuggs,
+      criticalOpen: openBugs.filter((b) => b.severity === 'Critical').length,
+      futurePending: (feat?.futureItems || []).filter((i) => i.status !== 'done').length,
+      canClose: openBugs.length === 0 && openSuggs.length === 0
+    };
+  };
+
+  // QA decisions (pass / fail items, verify & close a feature) are reserved for the QA role,
+  // so nobody signs off their own development work.
+  const canQaDecide = hasRole(currentUser, ROLES.QA);
+  const denyQaOnly = (what = 'This') => {
+    addToast(`${what} can only be done by QA.`, 'warning', 'QA Only');
+  };
+
+  // Open the feature window on its "Close feature" confirmation step
+  const requestCloseFeature = (featureId) => {
+    setFeatureFocus({ featureId, closeConfirm: true, ts: Date.now() });
+    setSelectedFeatureId(featureId);
+  };
+
+  // Open a feature and jump straight to specific defects / suggestions / future items.
+  // Switches to the feature's project when the user has access to it.
+  const openFeatureItems = (featureId, itemIds = []) => {
+    const feat = (features || []).find((f) => f.id === featureId);
+    if (!feat) {
+      addToast('This feature no longer exists.', 'warning');
+      return false;
+    }
+    if (feat.projectId && feat.projectId !== activeProjectId) {
+      if (!myProjects.some((p) => p.id === feat.projectId)) {
+        addToast("You don't have access to that project.", 'warning');
+        return false;
+      }
+      selectWorkingProject(feat.projectId);
+    }
+
+    const ids = (itemIds || []).filter(Boolean);
+    const inList = (list) => ids.filter((id) => (list || []).some((x) => x.id === id));
+    const bugIds = inList(feat.bugs);
+    const suggIds = inList(feat.suggestions);
+    const movedToFuture = ids.filter((id) => (feat.futureItems || []).some((fi) => fi.sourceId === id || fi.id === id));
+    const failedIds = [...(feat.bugs || []), ...(feat.suggestions || [])]
+      .filter((x) => ids.includes(x.id) && ['qa_failed', 'qa failed', 'failed', 'reopened'].includes((x.status || '').toLowerCase()))
+      .map((x) => x.id);
+
+    let tab = null;
+    if (ids.length > 0) {
+      if (failedIds.length > 0 && failedIds.length === bugIds.length + suggIds.length) tab = 'review';
+      else if (bugIds.length > 0) tab = 'bugs';
+      else if (suggIds.length > 0) tab = 'suggestions';
+      else if (movedToFuture.length > 0) tab = 'future';
+      else addToast('That item was removed from the feature.', 'info');
+    }
+
+    setFeatureFocus(tab ? { featureId, tab, itemIds: [...bugIds, ...suggIds], ts: Date.now() } : null);
+    setSelectedFeatureId(featureId);
+    return true;
+  };
+
+  // Navigate to whatever a notification is about
+  const openNotificationTarget = (notif) => {
+    if (!notif) return;
+    if (notif.id && !notif.read) markNotificationAsRead(notif.id);
+    if (notif.targetFeatureId) {
+      openFeatureItems(notif.targetFeatureId, notif.targetDefectId ? [notif.targetDefectId] : []);
+    }
   };
 
   const openCreateFeatureModal = (props = null) => {
@@ -1513,12 +1662,15 @@ export function AppProvider({ children }) {
       }
     }
 
+    const wantsClose = updatedData.status === 'verified' && feat.status !== 'verified';
     const updatedFeature = {
       ...feat,
       ...updatedData,
+      ...(wantsClose ? { status: feat.status } : {}),
       moduleName: moduleName || 'General',
       updatedAt: new Date().toISOString()
     };
+    if (wantsClose) setTimeout(() => requestCloseFeature(featureId), 0);
 
     setFeatures((prev) =>
       prev.map((f) => (f.id === featureId ? updatedFeature : f))
@@ -1551,9 +1703,49 @@ export function AppProvider({ children }) {
   };
 
   // Feature Status Transitions (In Dev -> Ready for Retest -> QA Verification -> Verified)
+  // Personal notice to the feature's dev & QA when it enters development or QA verification
+  const notifyFeatureStage = (feat, newStatus) => {
+    if (newStatus === 'in_dev') {
+      addNotification({
+        type: 'feature_in_dev',
+        title: `In Development: "${feat.name}"`,
+        message: `${currentUser?.name || 'A team member'} moved "${feat.name}" to In Development.`,
+        targetRole: 'all',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'info'
+      });
+    } else if (newStatus === 'in_qa') {
+      addNotification({
+        type: 'feature_in_qa',
+        title: `QA Verification Started: "${feat.name}"`,
+        message: `${currentUser?.name || 'QA'} started QA verification of "${feat.name}".`,
+        targetRole: 'all',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'info'
+      });
+    }
+  };
+
   const updateFeatureStatus = async (featureId, newStatus, metadata = {}) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
+
+    if (newStatus === 'verified' && feat.status !== 'verified') {
+      if (!canQaDecide) {
+        denyQaOnly('Verifying & closing a feature');
+        return;
+      }
+      if (!metadata.confirmed) {
+        requestCloseFeature(featureId);
+        return;
+      }
+      if (!getFeatureCloseCheck(feat).canClose) {
+        addToast('All defects and suggestions must pass QA before the feature can be closed.', 'warning', 'Cannot Close Yet');
+        return;
+      }
+    }
 
     if (newStatus === 'ready_for_qa') {
       addToast(
@@ -1625,6 +1817,7 @@ export function AppProvider({ children }) {
       addToast(`Feature "${feat.name}" marked Blocked!`, 'critical', 'Feature Blocked');
     } else {
       addToast(`Feature status updated to "${newStatus.replace(/_/g, ' ').toUpperCase()}"`, 'info');
+      if (feat.status !== newStatus) notifyFeatureStage(feat, newStatus);
     }
 
     const updatedFeature = {
@@ -1651,6 +1844,15 @@ export function AppProvider({ children }) {
   const moveFeatureCard = async (featureId, targetStatus, targetFeatureId = null, position = 'after') => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
+
+    if (targetStatus === 'verified' && feat.status !== 'verified') {
+      if (!canQaDecide) {
+        denyQaOnly('Verifying & closing a feature');
+        return;
+      }
+      requestCloseFeature(featureId);
+      return;
+    }
 
     const oldStatus = feat.status;
     const isStatusChanged = oldStatus !== targetStatus;
@@ -1707,6 +1909,7 @@ export function AppProvider({ children }) {
       } else {
         const readable = targetStatus.replace(/_/g, ' ').toUpperCase();
         addToast(`Moved "${feat.name}" to ${readable}`, 'info', 'Status Updated');
+        notifyFeatureStage(feat, targetStatus);
       }
     }
 
@@ -1938,6 +2141,8 @@ export function AppProvider({ children }) {
       targetFeatureId: feat.id,
       targetFeatureName: feat.name,
       targetDefectId: newBug.id,
+      itemKind: 'bug',
+      targetUserIds: [newBug.assignedDev || feat.assignedDev],
       severity: newBug.severity === 'Critical' ? 'critical' : 'warning'
     });
   };
@@ -1946,6 +2151,13 @@ export function AppProvider({ children }) {
   const updateFeatureBugStatus = async (featureId, bugId, newStatus, extraData = {}) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
+    if (['verified', 'qa_failed'].includes(newStatus) && !canQaDecide) {
+      denyQaOnly('Passing or failing a defect');
+      return;
+    }
+    const bugRec = (feat.bugs || []).find((b) => b.id === bugId) || {};
+    const bugDev = [bugRec.assignedDev || feat.assignedDev];
+    const bugQa = [feat.assignedQa, bugRec.reportedBy];
 
     if (newStatus === 'verified') {
       confetti({
@@ -1962,6 +2174,8 @@ export function AppProvider({ children }) {
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: bugId,
+        itemKind: 'bug',
+        targetUserIds: bugDev,
         severity: 'success'
       });
     } else if (newStatus === 'ready_for_qa') {
@@ -1974,6 +2188,8 @@ export function AppProvider({ children }) {
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: bugId,
+        itemKind: 'bug',
+        targetUserIds: bugQa,
         severity: 'success'
       });
     } else if (newStatus === 'qa_failed') {
@@ -1986,6 +2202,8 @@ export function AppProvider({ children }) {
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: bugId,
+        itemKind: 'bug',
+        targetUserIds: bugDev,
         severity: 'critical'
       });
     } else if (newStatus === 'in_dev') {
@@ -2141,6 +2359,7 @@ export function AppProvider({ children }) {
       targetFeatureId: feat.id,
       targetFeatureName: feat.name,
       targetDefectId: newSugg.id,
+      itemKind: 'suggestion',
       severity: 'info'
     });
   };
@@ -2148,6 +2367,12 @@ export function AppProvider({ children }) {
   const updateSuggestionStatus = async (featureId, suggId, newStatus, extraData = {}) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
+    if (['verified', 'implemented', 'qa_failed'].includes(newStatus) && !canQaDecide) {
+      denyQaOnly('Passing or failing a suggestion');
+      return;
+    }
+    const suggRec = (feat.suggestions || []).find((x) => x.id === suggId) || {};
+    const suggQa = [feat.assignedQa, suggRec.submittedBy];
 
     if (newStatus === 'verified' || newStatus === 'implemented') {
       confetti({
@@ -2164,6 +2389,7 @@ export function AppProvider({ children }) {
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: suggId,
+        itemKind: 'suggestion',
         severity: 'success'
       });
     } else if (newStatus === 'ready_for_qa') {
@@ -2171,11 +2397,13 @@ export function AppProvider({ children }) {
       addNotification({
         type: 'dev_fixed',
         title: `Dev Implemented: Suggestion [${suggId}]`,
-        message: `Suggestion [${suggId}] on "${feat.name}" was implemented by Developer. Ready for QA review!`,
+        message: `Suggestion [${suggId}] on "${feat.name}" was implemented by ${currentUser?.name || 'Developer'}. Ready for QA review!`,
         targetRole: 'qa',
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: suggId,
+        itemKind: 'suggestion',
+        targetUserIds: suggQa,
         severity: 'success'
       });
     } else if (newStatus === 'qa_failed') {
@@ -2188,6 +2416,7 @@ export function AppProvider({ children }) {
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
         targetDefectId: suggId,
+        itemKind: 'suggestion',
         severity: 'warning'
       });
     } else if (newStatus === 'in_dev') {
@@ -2286,6 +2515,14 @@ export function AppProvider({ children }) {
     };
 
     const closing = options.closeFeature && feat.status !== 'verified';
+    if (closing && !canQaDecide) {
+      denyQaOnly('Closing a feature');
+      return;
+    }
+    if (closing && !getFeatureCloseCheck(feat).canClose) {
+      addToast('All defects and suggestions must pass QA (or be moved to Future) before closing.', 'warning', 'Cannot Close Yet');
+      return;
+    }
     await patchFeatureFutureItems(featureId, (items) => [newItem, ...items], closing ? { status: 'verified' } : {});
 
     if (closing) {
@@ -2968,6 +3205,12 @@ export function AppProvider({ children }) {
         moveFeatureCard,
         reorderFeatureInPhase,
         startFeaturesDevelopment,
+        featureFocus,
+        getFeatureCloseCheck,
+        canQaDecide,
+        requestCloseFeature,
+        openFeatureItems,
+        openNotificationTarget,
         projectFutureItems,
         addFutureItem,
         updateFutureItem,

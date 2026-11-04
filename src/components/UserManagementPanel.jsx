@@ -152,6 +152,13 @@ export default function UserManagementPanel() {
     .filter((u) => !q || [u.name, u.username, u.email, u.title].some((v) => (v || '').toLowerCase().includes(q)))
     .filter((u) => (statusFilter === 'all' ? true : statusFilter === 'active' ? u.active !== false : u.active === false));
 
+  // Different accounts sharing one username can't both sign in — flag them
+  const usernameCounts = team.reduce((acc, u) => {
+    const key = (u.username || '').toLowerCase();
+    if (key) acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
   const counts = {
     all: team.length,
     active: team.filter((u) => u.active !== false).length,
@@ -254,6 +261,9 @@ export default function UserManagementPanel() {
                     @{member.username}
                     {member.title ? ` · ${member.title}` : ''}
                   </div>
+                  {usernameCounts[(member.username || '').toLowerCase()] > 1 && (
+                    <div className="um-warn">Username used by another account (id: {member.id}). Rename or delete one.</div>
+                  )}
                 </div>
 
                 <div className="um-roles">

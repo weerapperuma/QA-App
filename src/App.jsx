@@ -13,6 +13,7 @@ import CreateFeatureModal from './components/CreateFeatureModal';
 import EditFeatureModal from './components/EditFeatureModal';
 import CreateModuleModal from './components/CreateModuleModal';
 import NotificationToast from './components/NotificationToast';
+import PersonalToasts from './components/PersonalToasts';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import Login from './components/Login';
@@ -20,7 +21,7 @@ import ProfilePage from './components/ProfilePage';
 import AdminActivityPage from './components/AdminActivityPage';
 
 function MainApp() {
-  const { activeTab: requestedTab, isAuthenticated, needsProjectSelection } = useApp();
+  const { activeTab: requestedTab, isAuthenticated, needsProjectSelection, currentUser } = useApp();
   // Workspace pages stay locked until a working project is chosen (shown on My Profile)
   const WORKSPACE_TABS = ['features', 'board', 'release'];
   const activeTab = needsProjectSelection && WORKSPACE_TABS.includes(requestedTab) ? 'profile' : requestedTab;
@@ -56,6 +57,7 @@ function MainApp() {
       <EditFeatureModal />
       <CreateModuleModal />
       <NotificationToast />
+      <PersonalToasts key={currentUser?.id || 'anon'} />
     </div>
   );
 }

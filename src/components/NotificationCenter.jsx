@@ -24,8 +24,7 @@ export default function NotificationCenter() {
     markAllNotificationsAsRead,
     deleteNotification,
     clearAllNotifications,
-    openFeature,
-    setActiveTab,
+    openNotificationTarget,
     activeProjectId,
     currentUser
   } = useApp();
@@ -110,17 +109,10 @@ export default function NotificationCenter() {
     return true;
   });
 
+  // Open the exact feature / defect / suggestion the notification is about
   const handleNotificationClick = (notif) => {
     markNotificationAsRead(notif.id);
-    if (notif.targetDefectId) {
-      setActiveTab('board');
-      if (notif.targetFeatureId) {
-        openFeature(notif.targetFeatureId);
-      }
-    } else if (notif.targetFeatureId) {
-      setActiveTab('features');
-      openFeature(notif.targetFeatureId);
-    }
+    if (notif.targetFeatureId) openNotificationTarget(notif);
     setIsOpen(false);
   };
 

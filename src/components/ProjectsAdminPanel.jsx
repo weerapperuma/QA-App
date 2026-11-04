@@ -9,7 +9,7 @@ function ProjectEditor({ project, onDone }) {
     name: project.name || '',
     code: project.code || '',
     description: project.description || '',
-    memberIds: project.memberIds || []
+    memberIds: Array.from(new Set(project.memberIds || []))
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -150,7 +150,9 @@ export default function ProjectsAdminPanel() {
 
       <div className="um-list">
         {projects.map((p) => {
-          const members = (p.memberIds || []).map((id) => team.find((u) => u.id === id)).filter(Boolean);
+          const members = Array.from(new Set(p.memberIds || []))
+            .map((id) => team.find((u) => u.id === id))
+            .filter(Boolean);
           const featCount = features.filter((f) => f.projectId === p.id && !f.isMainModule && f.status !== 'module').length;
           return (
             <div key={p.id} className="um-row-wrap">

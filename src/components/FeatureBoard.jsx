@@ -47,6 +47,7 @@ export default function FeatureBoard() {
     reorderFeatureInPhase,
     deleteFeature,
     startFeaturesDevelopment,
+    canQaDecide,
     team,
     openCreateFeatureModal,
     setIsCreateModuleModalOpen,
@@ -1189,7 +1190,9 @@ export default function FeatureBoard() {
                           : 'No issues logged'
                         : `${doneItems}/${totalItems} resolved`;
 
-                      const nextAction = getNextStatusAction(feat.status, openBugCount);
+                      const rawNext = getNextStatusAction(feat.status, openBugCount);
+                      // Verify & Close is a QA decision
+                      const nextAction = rawNext && rawNext.next === 'verified' && !canQaDecide ? null : rawNext;
                       const isDragging = draggedFeatId === feat.id;
 
                       const isCardTarget = dragOverTarget?.cardId === feat.id;

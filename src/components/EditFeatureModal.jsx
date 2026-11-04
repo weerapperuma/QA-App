@@ -300,7 +300,9 @@ export default function EditFeatureModal() {
                   <option value="in_dev">1. In Development</option>
                   <option value="ready_for_qa">2. Ready for Retest (Staging)</option>
                   <option value="in_qa">3. QA Verification</option>
-                  <option value="verified">4. Verified & Closed</option>
+                  <option value="verified" disabled={editingFeature?.status !== 'verified'}>
+                    4. Verified & Closed (use Close Feature)
+                  </option>
                 </select>
               </div>
 

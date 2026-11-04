@@ -58,13 +58,10 @@ export function subscribeUsers(onUsersUpdate, fallbackUsers = []) {
         return;
       }
 
-      const users = [];
-      let hasAdmin = false;
-      snapshot.forEach((docSnap) => {
-        const u = { id: docSnap.id, ...docSnap.data() };
-        if (u.id === 'user-admin' || isAdmin(u)) hasAdmin = true;
-        users.push(u);
-      });
+      const rawUsers = [];
+      snapshot.forEach((docSnap) => rawUsers.push(docToUser(docSnap)));
+      const users = mergeDuplicateUsers(rawUsers);
+      const hasAdmin = users.some((u) => u.id === 'user-admin' || isAdmin(u));
 
       // Ensure root super admin always exists in Firestore
       if (!hasAdmin && fallbackUsers.length > 0) {
@@ -91,13 +88,44 @@ export function subscribeUsers(onUsersUpdate, fallbackUsers = []) {
   return unsubscribe;
 }
 
+// A user's app id can differ from its Firestore document id (e.g. users created by hand in
+// the Firebase console with an "id" field). Always read & write the real document.
+const docToUser = (docSnap) => {
+  const data = docSnap.data() || {};
+  return { ...data, id: data.id || docSnap.id, _docId: docSnap.id };
+};
+
+// Merge documents that represent the same user id into one record (newest data wins),
+// keeping the canonical document (doc id === user id) as the write target when it exists.
+const mergeDuplicateUsers = (users) => {
+  const byId = new Map();
+  users.forEach((u) => {
+    const existing = byId.get(u.id);
+    if (!existing) {
+      byId.set(u.id, u);
+      return;
+    }
+    const newer = (u.updatedAt || '') > (existing.updatedAt || '') ? u : existing;
+    const canonicalDocId = [existing._docId, u._docId].find((d) => d === u.id) || existing._docId;
+    byId.set(u.id, {
+      ...newer,
+      _docId: canonicalDocId,
+      _duplicateDocIds: Array.from(
+        new Set([...(existing._duplicateDocIds || []), existing._docId, u._docId].filter((d) => d && d !== canonicalDocId))
+      )
+    });
+  });
+  return Array.from(byId.values());
+};
+
 export async function saveUserToFirestore(user) {
   if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
 
   try {
-    const userRef = doc(firestoreDb, 'users', user.id);
+    const { _docId, _duplicateDocIds, ...data } = user;
+    const userRef = doc(firestoreDb, 'users', _docId || user.id);
     await setDoc(userRef, cleanForFirestore({
-      ...user,
+      ...data,
       updatedAt: new Date().toISOString()
     }), { merge: true });
     return { success: true };
@@ -107,11 +135,15 @@ export async function saveUserToFirestore(user) {
   }
 }
 
-export async function deleteUserFromFirestore(userId) {
+export async function deleteUserFromFirestore(userOrId) {
   if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
 
   try {
-    await deleteDoc(doc(firestoreDb, 'users', userId));
+    const user = typeof userOrId === 'string' ? { id: userOrId } : userOrId;
+    const docIds = new Set([user._docId || user.id, ...(user._duplicateDocIds || [])].filter(Boolean));
+    for (const docId of docIds) {
+      await deleteDoc(doc(firestoreDb, 'users', docId));
+    }
     return { success: true };
   } catch (err) {
     console.error('deleteUserFromFirestore error:', err);
@@ -129,15 +161,17 @@ export async function findUserInFirestore(usernameOrEmail) {
     const snapshot = await getDocs(usersCol);
     let found = null;
     const lower = (usernameOrEmail || '').trim().toLowerCase();
+    const matches = [];
     snapshot.forEach((docSnap) => {
-      const u = { id: docSnap.id, ...docSnap.data() };
+      const u = docToUser(docSnap);
       if (
         (u.username && u.username.toLowerCase() === lower) ||
         (u.email && u.email.toLowerCase() === lower)
       ) {
-        found = u;
+        matches.push(u);
       }
     });
+    found = mergeDuplicateUsers(matches)[0] || null;
     return found;
   } catch (err) {
     console.warn('findUserInFirestore error:', err);

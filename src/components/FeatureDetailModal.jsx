@@ -1,1234 +1,870 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { FeatureFutureItemsSection, FutureItemForm } from './FutureImprovements';
 import {
   X,
-  Layers,
   Bug,
   Lightbulb,
   CheckCircle2,
-  AlertTriangle,
+  XCircle,
   Plus,
   GitPullRequest,
   ExternalLink,
-  Code2,
-  ShieldCheck,
   Server,
   ArrowRight,
   Sparkles,
-  Check,
   FolderTree,
-  FolderPlus,
-  ChevronRight,
   Trash2,
   Hourglass,
-  Edit2
+  Edit2,
+  AlertTriangle,
+  ChevronDown,
+  Play,
+  RotateCcw
 } from 'lucide-react';
 
+/* ---------- helpers ---------- */
+const DONE = ['verified', 'implemented', 'qa_passed', 'qa passed', 'closed'];
+const norm = (s) => (s || 'open').toLowerCase().trim();
+const isPassed = (s) => DONE.includes(norm(s));
+const isFailed = (s) => ['qa_failed', 'qa failed', 'failed', 'reopened'].includes(norm(s));
+
+const ITEM_STATUS = {
+  open: { label: 'Open', cls: 'open' },
+  in_dev: { label: 'In Dev', cls: 'dev' },
+  ready_for_qa: { label: 'Ready for Retest', cls: 'retest' },
+  verified: { label: 'QA Passed', cls: 'passed' },
+  implemented: { label: 'QA Passed', cls: 'passed' },
+  qa_failed: { label: 'QA Failed', cls: 'failed' }
+};
+const itemStatus = (s) => ITEM_STATUS[norm(s)] || (isPassed(s) ? ITEM_STATUS.verified : isFailed(s) ? ITEM_STATUS.qa_failed : ITEM_STATUS.open);
+
+const FEATURE_STATUS = {
+  backlog: 'Feature Pool',
+  in_dev: 'In Development',
+  ready_for_qa: 'Ready for Retest',
+  in_qa: 'QA Verification',
+  verified: 'Verified & Closed'
+};
+
+const countItems = (items) => {
+  const passed = items.filter((i) => isPassed(i.status)).length;
+  const failed = items.filter((i) => isFailed(i.status)).length;
+  return { total: items.length, passed, failed, open: items.length - passed };
+};
+
+/* ---------- summary tile ---------- */
+function StatTile({ icon: Icon, label, stats, tone, onClick }) {
+  const pct = stats.total ? Math.round((stats.passed / stats.total) * 100) : 0;
+  return (
+    <button type="button" className={`fd-stat tone-${tone}`} onClick={onClick}>
+      <div className="fd-stat-top">
+        <span className="fd-stat-label">
+          <Icon size={13} /> {label}
+        </span>
+        <span className="fd-stat-total">{stats.total}</span>
+      </div>
+      <div className="feat-card-bar">
+        <div className={`feat-card-bar-fill ${stats.total && stats.passed === stats.total ? 'tone-done' : ''}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="fd-stat-meta">
+        <span className="ok">
+          <CheckCircle2 size={11} /> {stats.passed} passed
+        </span>
+        {stats.failed > 0 && (
+          <span className="bad">
+            <XCircle size={11} /> {stats.failed} failed
+          </span>
+        )}
+        <span>{stats.open} open</span>
+      </div>
+    </button>
+  );
+}
+
+/* ---------- one defect / suggestion row ---------- */
+function ItemRow({ item, kind, featureId, focused = false, scrollTo = false }) {
+  const {
+    updateFeatureBugStatus,
+    updateSuggestionStatus,
+    deleteBugFromFeature,
+    deleteSuggestionFromFeature,
+    openMoveToFuture,
+    canQaDecide
+  } = useApp();
+  const [expanded, setExpanded] = useState(focused);
+  const rowRef = useRef(null);
+  useEffect(() => {
+    if (!scrollTo) return undefined;
+    const t = setTimeout(() => rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+    return () => clearTimeout(t);
+  }, [scrollTo]);
+  const isBug = kind === 'bug';
+  const setStatus = (s) => (isBug ? updateFeatureBugStatus(featureId, item.id, s) : updateSuggestionStatus(featureId, item.id, s));
+  const st = norm(item.status);
+  const status = itemStatus(item.status);
+  const level = isBug ? item.severity : item.priority;
+
+  const details = isBug
+    ? [
+        ['Steps', item.reproSteps],
+        ['Expected', item.expectedResult],
+        ['Actual', item.actualResult],
+        ['Dev note', item.devNote]
+      ]
+    : [
+        ['Notes', item.notes],
+        ['Dev note', item.devNote]
+      ];
+  const hasDetails = details.some(([, v]) => v);
+
+  return (
+    <div ref={rowRef} className={`fd-item status-${status.cls} ${focused ? 'focused' : ''}`}>
+      <div className="fd-item-row">
+        <span className={`fd-level level-${(level || 'medium').toLowerCase()}`} title={level}>
+          {isBug ? <Bug size={12} /> : <Lightbulb size={12} />}
+        </span>
+
+        <button type="button" className="fd-item-main" onClick={() => hasDetails && setExpanded(!expanded)}>
+          <span className="fd-item-title">{item.title}</span>
+          <span className="fd-item-sub">
+            {item.id}
+            {level ? ` · ${level}` : ''}
+            {hasDetails && <ChevronDown size={11} className={expanded ? 'open' : ''} />}
+          </span>
+        </button>
+
+        <span className={`fd-pill ${status.cls}`}>{status.label}</span>
+
+        <div className="fd-item-actions">
+          {(st === 'open' || isFailed(st)) && (
+            <button type="button" className="fd-act" onClick={() => setStatus('in_dev')} title="Developer starts working on it">
+              <Play size={11} /> Start Fix
+            </button>
+          )}
+          {(st === 'open' || st === 'in_dev' || isFailed(st)) && (
+            <button type="button" className="fd-act primary" onClick={() => setStatus('ready_for_qa')} title="Fixed — send to QA retest">
+              Fixed <ArrowRight size={11} />
+            </button>
+          )}
+          {st === 'ready_for_qa' && canQaDecide && (
+            <>
+              <button type="button" className="fd-act pass" onClick={() => setStatus('verified')}>
+                <CheckCircle2 size={11} /> Pass
+              </button>
+              <button type="button" className="fd-act fail" onClick={() => setStatus('qa_failed')}>
+                <XCircle size={11} /> Fail
+              </button>
+            </>
+          )}
+          {st === 'ready_for_qa' && !canQaDecide && <span className="fd-wait">Waiting for QA</span>}
+          {isPassed(st) && canQaDecide && (
+            <button type="button" className="fd-act" onClick={() => setStatus('qa_failed')} title="Re-open as QA failed">
+              <RotateCcw size={11} />
+            </button>
+          )}
+          <button type="button" className="fd-icon warn" onClick={() => openMoveToFuture(featureId, kind, item.id)} title="Move to Future Improvements">
+            <Hourglass size={12} />
+          </button>
+          <button
+            type="button"
+            className="fd-icon danger"
+            onClick={() => {
+              if (window.confirm(`Delete ${isBug ? 'defect' : 'suggestion'} [${item.id}] "${item.title}"?`)) {
+                if (isBug) deleteBugFromFeature(featureId, item.id);
+                else deleteSuggestionFromFeature(featureId, item.id);
+              }
+            }}
+            title="Delete"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+
+      {expanded && hasDetails && (
+        <div className="fd-item-details">
+          {details
+            .filter(([, v]) => v)
+            .map(([k, v]) => (
+              <div key={k}>
+                <span>{k}</span>
+                <p>{v}</p>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- add defect / suggestion form ---------- */
+function AddItemForm({ kind, feature, onDone }) {
+  const { addBugToFeature, addSuggestionToFeature } = useApp();
+  const isBug = kind === 'bug';
+  const [form, setForm] = useState({ title: '', level: isBug ? 'High' : 'Medium', repro: '', expected: '', actual: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (saving || !form.title.trim()) return;
+    setSaving(true);
+    try {
+      if (isBug) {
+        await addBugToFeature(feature.id, {
+          title: form.title.trim(),
+          severity: form.level,
+          reproSteps: form.repro.trim(),
+          expectedResult: form.expected.trim(),
+          actualResult: form.actual.trim()
+        });
+      } else {
+        await addSuggestionToFeature(feature.id, { title: form.title.trim(), priority: form.level, notes: form.notes.trim() });
+      }
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form className="fd-form" onSubmit={submit}>
+      <div className="fd-form-row with-select">
+        <input
+          className="form-input"
+          placeholder={isBug ? 'What is wrong? e.g. Phone field accepts letters' : 'Suggestion, e.g. Add search to customer table'}
+          value={form.title}
+          onChange={set('title')}
+          autoFocus
+          required
+        />
+        <select className="form-select" value={form.level} onChange={set('level')}>
+          {(isBug ? ['Critical', 'High', 'Medium', 'Low'] : ['High', 'Medium', 'Low']).map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </div>
+      {isBug ? (
+        <>
+          <input className="form-input" placeholder="Steps to reproduce (optional)" value={form.repro} onChange={set('repro')} />
+          <div className="fd-form-row">
+            <input className="form-input" placeholder="Expected (optional)" value={form.expected} onChange={set('expected')} />
+            <input className="form-input" placeholder="Actual (optional)" value={form.actual} onChange={set('actual')} />
+          </div>
+        </>
+      ) : (
+        <input className="form-input" placeholder="Why is it helpful? (optional)" value={form.notes} onChange={set('notes')} />
+      )}
+      <div className="pf-actions">
+        <button type="button" className="fb-btn" onClick={onDone} disabled={saving}>
+          Cancel
+        </button>
+        <button type="submit" className="fb-btn fb-btn-primary" disabled={saving || !form.title.trim()}>
+          {saving ? 'Saving…' : isBug ? 'Log Defect' : 'Add Suggestion'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ---------- list with filter + add ---------- */
+function ItemList({ kind, items, feature, focusIds = [] }) {
+  const hasFocus = items.some((i) => focusIds.includes(i.id));
+  const [filter, setFilter] = useState(hasFocus ? 'all' : 'open');
+  const [adding, setAdding] = useState(false);
+  const isBug = kind === 'bug';
+  const filtered = items.filter((i) => (filter === 'all' ? true : filter === 'passed' ? isPassed(i.status) : !isPassed(i.status)));
+  const c = countItems(items);
+
+  return (
+    <div className="fd-list">
+      <div className="fd-list-head">
+        <div className="fi-tabs">
+          {[
+            ['open', 'Open', c.open],
+            ['passed', 'QA Passed', c.passed],
+            ['all', 'All', c.total]
+          ].map(([id, label, n]) => (
+            <button key={id} type="button" className={`fb-tab ${filter === id ? 'active' : ''}`} onClick={() => setFilter(id)}>
+              <span>{label}</span>
+              <span className="fb-tab-count">{n}</span>
+            </button>
+          ))}
+        </div>
+        {!adding && (
+          <button type="button" className="fb-btn" onClick={() => setAdding(true)}>
+            <Plus size={13} />
+            <span>{isBug ? 'Log Defect' : 'Add Suggestion'}</span>
+          </button>
+        )}
+      </div>
+      {adding && <AddItemForm kind={kind} feature={feature} onDone={() => setAdding(false)} />}
+      {filtered.length === 0 ? (
+        <div className="fi-empty">
+          {items.length === 0
+            ? isBug
+              ? 'No defects logged on this feature.'
+              : 'No suggestions yet.'
+            : filter === 'open'
+            ? 'Nothing open — all QA passed.'
+            : 'Nothing here.'}
+        </div>
+      ) : (
+        filtered.map((item) => {
+          const focused = focusIds.includes(item.id);
+          return (
+            <ItemRow
+              key={item.id}
+              item={item}
+              kind={kind}
+              featureId={feature.id}
+              focused={focused}
+              scrollTo={focused && item.id === focusIds.find((id) => items.some((i) => i.id === id))}
+            />
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+
+/* ---------- "Close feature" confirmation step ---------- */
+function CheckLine({ ok, label, detail, warn = false }) {
+  return (
+    <div className={`fd-check ${ok ? 'ok' : warn ? 'warn' : 'bad'}`}>
+      {ok ? <CheckCircle2 size={14} /> : warn ? <AlertTriangle size={14} /> : <XCircle size={14} />}
+      <span className="fd-check-label">{label}</span>
+      {detail && <span className="fd-check-detail">{detail}</span>}
+    </div>
+  );
+}
+
+function CloseFeatureConfirm({ feature, check, onCancel, onReview, onPending }) {
+  const { updateFeatureStatus } = useApp();
+  const [confirmed, setConfirmed] = useState(false);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const ready = check.canClose && confirmed;
+
+  const close = async () => {
+    if (!ready || saving) return;
+    setSaving(true);
+    await updateFeatureStatus(feature.id, 'verified', {
+      confirmed: true,
+      ...(note.trim() ? { qaNotes: note.trim() } : {})
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="fd-confirm">
+      <div className="fd-confirm-title">
+        <CheckCircle2 size={15} /> Close "{feature.name}"?
+      </div>
+
+      <div className="fd-checks">
+        <CheckLine
+          ok={check.openBugs.length === 0}
+          label="All defects passed QA"
+          detail={`${check.bugsPassed}/${check.bugsTotal}${check.criticalOpen ? ` · ${check.criticalOpen} critical open` : ''}`}
+        />
+        <CheckLine ok={check.openSuggs.length === 0} label="All suggestions passed QA" detail={`${check.suggsPassed}/${check.suggsTotal}`} />
+        <CheckLine
+          ok={check.futurePending === 0}
+          warn
+          label={check.futurePending ? 'Future items stay pending (does not block)' : 'No pending future items'}
+          detail={check.futurePending ? String(check.futurePending) : ''}
+        />
+      </div>
+
+      {!check.canClose ? (
+        <div className="fd-confirm-blocked">
+          <span>
+            {check.openBugs.length + check.openSuggs.length} item(s) still open. Get them QA passed, or move ones that must wait
+            (e.g. an API) to Future with the ⏳ button.
+          </span>
+          <button type="button" className="fb-btn" onClick={onReview}>
+            Review open items
+          </button>
+        </div>
+      ) : (
+        <>
+          <textarea
+            className="form-textarea"
+            rows={2}
+            placeholder="QA sign-off note (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <label className="fd-confirm-tick">
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+            <span>I verified this feature on staging and it is ready to close.</span>
+          </label>
+        </>
+      )}
+
+      <div className="pf-actions">
+        <button type="button" className="fb-btn" onClick={onCancel} disabled={saving}>
+          Cancel
+        </button>
+        {check.canClose && (
+          <button type="button" className="fb-btn" onClick={onPending} disabled={saving} title="Close now, track an unfinished dependency">
+            <Hourglass size={13} /> Close with Pending Item
+          </button>
+        )}
+        <button type="button" className="fb-btn fd-btn-pass" onClick={close} disabled={!ready || saving}>
+          <CheckCircle2 size={14} /> {saving ? 'Closing…' : 'Close Feature'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- modal ---------- */
+// Re-mounts per feature so tabs/forms reset when a different feature is opened
 export default function FeatureDetailModal() {
+  const { selectedFeature, featureFocus } = useApp();
+  if (!selectedFeature) return null;
+  const focus = featureFocus && featureFocus.featureId === selectedFeature.id ? featureFocus : null;
+  return <FeatureDetailContent key={`${selectedFeature.id}-${focus?.ts || 0}`} focus={focus} />;
+}
+
+function FeatureDetailContent({ focus }) {
   const {
     selectedFeature,
     closeFeature,
     openEditFeatureModal,
     updateFeatureStatus,
-    addBugToFeature,
-    updateFeatureBugStatus,
-    deleteBugFromFeature,
-    addSuggestionToFeature,
-    updateSuggestionStatus,
-    deleteSuggestionFromFeature,
-    activeProject,
     projectFeatures,
     allModuleNames,
-    openFeature,
-    openCreateFeatureModal,
     updateFeatureModule,
     deleteFeature,
     team,
     updateDefectsFilter,
     setActiveTab,
     addFutureItem,
-    openMoveToFuture
+    getFeatureCloseCheck,
+    canQaDecide
   } = useApp();
 
-  // "Close with pending item" (e.g. waiting on an API) inline form
+  const [tab, setTab] = useState(focus?.tab || null);
+  const focusIds = focus?.itemIds || [];
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoff, setHandoff] = useState({ build: '', pr: '', notes: '' });
   const [showCloseWithPending, setShowCloseWithPending] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(!!focus?.closeConfirm);
+  const isQaUser = canQaDecide;
+  const [descOpen, setDescOpen] = useState(false);
 
-  // Inline Bug form state
-  const [showAddBugForm, setShowAddBugForm] = useState(false);
-  const [bugTitle, setBugTitle] = useState('');
-  const [bugSeverity, setBugSeverity] = useState('Critical');
-  const [bugRepro, setBugRepro] = useState('');
-  const [bugExpected, setBugExpected] = useState('');
-  const [bugActual, setBugActual] = useState('');
+  const featureId = selectedFeature?.id;
 
-  // Inline Suggestion form state
-  const [showAddSuggForm, setShowAddSuggForm] = useState(false);
-  const [suggTitle, setSuggTitle] = useState('');
-  const [suggPriority, setSuggPriority] = useState('High');
-  const [suggNotes, setSuggNotes] = useState('');
-
-  const [isSubmittingBug, setIsSubmittingBug] = useState(false);
-  const [isSubmittingSugg, setIsSubmittingSugg] = useState(false);
-
-  // Dev handoff state
-  const [showHandoffBox, setShowHandoffBox] = useState(false);
-  const [handoffBuild, setHandoffBuild] = useState('#413');
-  const [handoffPr, setHandoffPr] = useState('');
-  const [handoffNotes, setHandoffNotes] = useState('');
+  // Close on Escape
+  useEffect(() => {
+    if (!featureId) return undefined;
+    const onKey = (e) => e.key === 'Escape' && closeFeature();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [featureId, closeFeature]);
 
   if (!selectedFeature) return null;
+  const f = selectedFeature;
 
-  const dev = team.find((m) => m.id === selectedFeature.assignedDev);
-  const qa = team.find((m) => m.id === selectedFeature.assignedQa);
+  const dev = team.find((m) => m.id === f.assignedDev);
+  const qa = team.find((m) => m.id === f.assignedQa);
+  const bugs = f.bugs || [];
+  const suggestions = f.suggestions || [];
+  const future = f.futureItems || [];
+  const bugStats = countItems(bugs);
+  const suggStats = countItems(suggestions);
+  const futureOpen = future.filter((i) => i.status !== 'done').length;
+  const futureDone = future.length - futureOpen;
 
-  const bugs = selectedFeature.bugs || [];
-  const openBugs = bugs.filter((b) => b.status !== 'verified');
-  const criticalOpenBugs = openBugs.filter((b) => b.severity === 'Critical');
-  const suggestions = selectedFeature.suggestions || [];
+  const failedBugs = bugs.filter((b) => isFailed(b.status));
+  const failedSuggs = suggestions.filter((s) => isFailed(s.status));
+  const reviewCount = failedBugs.length + failedSuggs.length;
 
-  const allBugsVerified = openBugs.length === 0 && bugs.length > 0;
-  const canVerifyFeature = criticalOpenBugs.length === 0;
-
-  const availableModules = allModuleNames && allModuleNames.length > 0
-    ? allModuleNames
-    : Array.from(new Set(projectFeatures.map((f) => f.moduleName).filter(Boolean)));
-
-  const handleAddBugSubmit = async (e) => {
-    e.preventDefault();
-    if (isSubmittingBug || !bugTitle.trim()) return;
-
-    setIsSubmittingBug(true);
-    try {
-      await addBugToFeature(selectedFeature.id, {
-        title: bugTitle.trim(),
-        severity: bugSeverity,
-        reproSteps: bugRepro.trim(),
-        expectedResult: bugExpected.trim(),
-        actualResult: bugActual.trim()
-      });
-
-      setBugTitle('');
-      setBugRepro('');
-      setBugExpected('');
-      setBugActual('');
-      setShowAddBugForm(false);
-    } finally {
-      setIsSubmittingBug(false);
-    }
+  const closeCheck = getFeatureCloseCheck(f);
+  const startClose = () => {
+    setShowCloseWithPending(false);
+    setShowCloseConfirm(true);
   };
 
-  const handleAddSuggSubmit = async (e) => {
-    e.preventDefault();
-    if (isSubmittingSugg || !suggTitle.trim()) return;
+  const allItems = bugs.length + suggestions.length;
+  const allPassed = bugStats.passed + suggStats.passed;
 
-    setIsSubmittingSugg(true);
-    try {
-      await addSuggestionToFeature(selectedFeature.id, {
-        title: suggTitle.trim(),
-        priority: suggPriority,
-        notes: suggNotes.trim()
-      });
+  const activeTab = tab || (reviewCount > 0 ? 'review' : 'bugs');
 
-      setSuggTitle('');
-      setSuggNotes('');
-      setShowAddSuggForm(false);
-    } finally {
-      setIsSubmittingSugg(false);
-    }
+  const availableModules =
+    allModuleNames && allModuleNames.length > 0
+      ? allModuleNames
+      : Array.from(new Set(projectFeatures.map((x) => x.moduleName).filter(Boolean)));
+
+  const viewInDefects = (typeFilter) => {
+    updateDefectsFilter?.({ featureFilter: f.id, moduleFilter: (f.moduleName || 'General').trim(), typeFilter });
+    closeFeature();
+    setActiveTab?.('board');
   };
 
-  const handleHandoffSubmit = (e) => {
+  const submitHandoff = (e) => {
     e.preventDefault();
-    updateFeatureStatus(selectedFeature.id, 'ready_for_qa', {
-      stagingBuild: handoffBuild,
-      prLink: handoffPr || selectedFeature.prLink,
-      devNotes: handoffNotes || selectedFeature.devNotes
+    updateFeatureStatus(f.id, 'ready_for_qa', {
+      stagingBuild: handoff.build || f.stagingBuild,
+      prLink: handoff.pr || f.prLink,
+      devNotes: handoff.notes || f.devNotes
     });
-    setShowHandoffBox(false);
+    setShowHandoff(false);
   };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
+  /* next step for the feature's current stage */
+  const renderNextStep = () => {
+    switch (f.status) {
       case 'backlog':
-        return <span className="tag-pill" style={{ background: 'var(--bg-surface)' }}>Backlog</span>;
+        return (
+          <button type="button" className="fb-btn fb-btn-primary" onClick={() => updateFeatureStatus(f.id, 'in_dev')}>
+            <Sparkles size={14} /> Start Development
+          </button>
+        );
       case 'in_dev':
-        return <span className="tag-pill" style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)', border: '1px solid var(--accent-dev-border)' }}>In Development</span>;
+        return showHandoff ? null : (
+          <button type="button" className="fb-btn fb-btn-primary" onClick={() => setShowHandoff(true)}>
+            <Server size={14} /> Deploy to Staging & Notify QA
+          </button>
+        );
       case 'ready_for_qa':
-        return <span className="tag-pill" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.3)' }}>Ready for Retest</span>;
+        return (
+          <button type="button" className="fb-btn fb-btn-primary" onClick={() => updateFeatureStatus(f.id, 'in_qa')}>
+            <ArrowRight size={14} /> Start QA Testing
+          </button>
+        );
       case 'in_qa':
-        return <span className="tag-pill" style={{ background: 'var(--accent-qa-subtle)', color: 'var(--accent-qa)', border: '1px solid var(--accent-qa-border)' }}>QA Verification</span>;
+        return (
+          <>
+            {isQaUser && !showCloseConfirm && !showCloseWithPending && (
+              <button type="button" className="fb-btn fd-btn-pass" onClick={startClose} title="Review the QA checklist and close">
+                <CheckCircle2 size={14} /> Verify & Close…
+              </button>
+            )}
+            {!isQaUser && <span className="fd-wait">Waiting for QA sign-off</span>}
+            {!closeCheck.canClose && (
+              <span className="fd-next-hint">
+                {closeCheck.openBugs.length + closeCheck.openSuggs.length} open item(s) must pass QA first
+              </span>
+            )}
+          </>
+        );
       case 'verified':
-        return <span className="tag-pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>Verified & Closed</span>;
+        return (
+          <span className="fd-closed">
+            <CheckCircle2 size={14} /> Verified & Closed
+          </span>
+        );
       default:
-        return <span className="tag-pill">{status}</span>;
+        return null;
     }
   };
+
+  const TABS = [
+    { id: 'review', label: 'Needs Review', count: reviewCount, alert: reviewCount > 0 },
+    { id: 'bugs', label: 'Defects', count: bugStats.total },
+    { id: 'suggestions', label: 'Suggestions', count: suggStats.total },
+    { id: 'future', label: 'Future', count: futureOpen },
+    { id: 'details', label: 'Details' }
+  ];
 
   return (
     <div className="modal-overlay" onClick={closeFeature}>
-      <div className="modal-container" style={{ maxWidth: '1050px' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-container fd-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-            <span className="ticket-id" style={{ fontSize: '1rem', color: 'var(--accent-dev)' }}>
-              {selectedFeature.code || selectedFeature.id}
-            </span>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              in {activeProject?.name || 'Project'}
-            </span>
-            {getStatusBadge(selectedFeature.status)}
-
-            {selectedFeature.moduleName && (
-              <span
-                className="tag-pill"
-                style={{
-                  background: 'rgba(56, 189, 248, 0.12)',
-                  color: 'var(--accent-dev)',
-                  border: '1px solid rgba(56, 189, 248, 0.25)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem'
+        <div className="fd-header">
+          <div className="fd-header-top">
+            <div className="fd-crumbs">
+              <span className="fd-code">{f.code || f.id}</span>
+              {f.moduleName && (
+                <span className="fd-module">
+                  <FolderTree size={11} /> {f.moduleName}
+                </span>
+              )}
+              <span className={`pp-status st-${f.status}`}>{FEATURE_STATUS[f.status] || f.status}</span>
+            </div>
+            <div className="fd-header-actions">
+              <button type="button" className="fd-icon" onClick={() => openEditFeatureModal(f)} title="Edit feature">
+                <Edit2 size={14} />
+              </button>
+              <button
+                type="button"
+                className="fd-icon danger"
+                onClick={() => {
+                  if (window.confirm(`Delete feature "${f.name}"? All its defects and suggestions are removed too.`)) {
+                    deleteFeature(f.id);
+                    closeFeature();
+                  }
                 }}
+                title="Delete feature"
               >
-                <FolderTree size={12} />
-                Module: {selectedFeature.moduleName}
+                <Trash2 size={14} />
+              </button>
+              <button type="button" className="fd-icon" onClick={closeFeature} title="Close (Esc)">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <h2 className="fd-title">{f.name}</h2>
+          {f.description && (
+            <p className={`fd-desc ${descOpen ? 'open' : ''}`} onClick={() => setDescOpen(!descOpen)} title={descOpen ? '' : 'Show more'}>
+              {f.description}
+            </p>
+          )}
+          <div className="fd-people">
+            <span>
+              Dev
+              {dev ? (
+                <>
+                  <span className="user-avatar-small" style={{ background: dev.color }}>
+                    {dev.initials}
+                  </span>
+                  {dev.name}
+                </>
+              ) : (
+                ' · Unassigned'
+              )}
+            </span>
+            <span>
+              QA
+              {qa ? (
+                <>
+                  <span className="user-avatar-small" style={{ background: qa.color }}>
+                    {qa.initials}
+                  </span>
+                  {qa.name}
+                </>
+              ) : (
+                ' · Unassigned'
+              )}
+            </span>
+            {allItems > 0 && (
+              <span className="fd-overall">
+                QA passed <strong>{allPassed}</strong> of <strong>{allItems}</strong>
               </span>
             )}
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => openEditFeatureModal(selectedFeature)}
-              style={{
-                fontSize: '0.8rem',
-                padding: '0.35rem 0.75rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                color: 'var(--accent-dev)',
-                background: 'rgba(56, 189, 248, 0.1)',
-                borderColor: 'var(--accent-dev-border)'
-              }}
-              title="Edit Feature details, module, and settings"
-            >
-              <Edit2 size={13} />
-              <span>Edit Feature</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete feature "${selectedFeature.name}"? This will permanently remove all associated bugs and suggestions.`
-                  )
-                ) {
-                  deleteFeature(selectedFeature.id);
-                  closeFeature();
-                }
-              }}
-              style={{
-                fontSize: '0.8rem',
-                padding: '0.35rem 0.75rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                color: 'var(--status-critical)',
-                background: 'rgba(244, 63, 94, 0.1)',
-                border: '1px solid var(--status-critical-border)',
-                cursor: 'pointer'
-              }}
-              title="Delete Feature"
-            >
-              <Trash2 size={13} />
-              <span>Delete Feature</span>
-            </button>
-
-            <button className="btn-icon" onClick={closeFeature} type="button">
-              <X size={18} />
-            </button>
-          </div>
         </div>
 
-        {/* Body */}
-        <div className="modal-body feature-modal-body">
-          {/* Main Left Content */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Title & Description */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0 }}>
-                  {selectedFeature.name}
-                </h2>
-                <button
-                  type="button"
-                  className="btn-icon"
-                  onClick={() => openEditFeatureModal(selectedFeature)}
-                  title="Edit Feature"
-                  style={{ width: '28px', height: '28px', color: 'var(--accent-dev)' }}
-                >
-                  <Edit2 size={14} />
-                </button>
-              </div>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '0.5rem' }}>
-                {selectedFeature.description || 'No description provided.'}
-              </p>
-            </div>
-
-            {/* Developer Handoff Box */}
-            <div className="handoff-box dev-box">
-              <div className="handoff-box-title">
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-dev)' }}>
-                  <Code2 size={16} />
-                  Developer Implementation & Staging Build
+        <div className="fd-body">
+          {/* Summary */}
+          <div className="fd-stats">
+            <StatTile icon={Bug} label="Defects" stats={bugStats} tone={bugStats.failed ? 'bad' : bugStats.open ? 'warn' : 'ok'} onClick={() => setTab('bugs')} />
+            <StatTile icon={Lightbulb} label="Suggestions" stats={suggStats} tone="sugg" onClick={() => setTab('suggestions')} />
+            <button type="button" className="fd-stat tone-future" onClick={() => setTab('future')}>
+              <div className="fd-stat-top">
+                <span className="fd-stat-label">
+                  <Hourglass size={13} /> Future
                 </span>
-                {selectedFeature.prLink && (
-                  <a
-                    href={selectedFeature.prLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      color: 'var(--accent-dev)',
-                      fontSize: '0.75rem',
-                      textDecoration: 'none',
-                      fontWeight: 600
-                    }}
-                  >
-                    <GitPullRequest size={12} />
-                    PR Link
-                    <ExternalLink size={10} />
-                  </a>
-                )}
+                <span className="fd-stat-total">{future.length}</span>
               </div>
-
-              <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.82rem' }}>
-                <div>
-                  <strong style={{ color: 'var(--text-muted)' }}>Staging Build: </strong>
-                  <span>{selectedFeature.stagingBuild || 'Pending Build Deploy'}</span>
-                </div>
-                <div>
-                  <strong style={{ color: 'var(--text-muted)' }}>Target Release: </strong>
-                  <span>{selectedFeature.targetRelease}</span>
-                </div>
+              <div className="feat-card-bar">
+                <div className="feat-card-bar-fill tone-done" style={{ width: `${future.length ? Math.round((futureDone / future.length) * 100) : 0}%` }} />
               </div>
-
-              {selectedFeature.devNotes && (
-                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
-                  <strong>Developer Notes: </strong>
-                  {selectedFeature.devNotes}
-                </div>
-              )}
-
-              {/* Feature Pool: pull into development */}
-              {selectedFeature.status === 'backlog' && (
-                <div style={{ marginTop: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary"
-                    style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
-                    onClick={() => updateFeatureStatus(selectedFeature.id, 'in_dev')}
-                  >
-                    <Sparkles size={13} />
-                    <span>Start Development</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Dev: Push to Staging & Ready for Retest */}
-              {selectedFeature.status === 'in_dev' && (
-                <div style={{ marginTop: '0.5rem' }}>
-                  {!showHandoffBox ? (
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
-                      onClick={() => setShowHandoffBox(true)}
-                    >
-                      <Server size={13} />
-                      <span>Deploy to Staging & Notify QA</span>
-                    </button>
-                  ) : (
-                    <div
-                      style={{
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--accent-dev-border)',
-                        padding: '0.85rem',
-                        borderRadius: 'var(--radius-md)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem'
-                      }}
-                    >
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-dev)' }}>
-                        Confirm Staging Handoff for {selectedFeature.name}
-                      </span>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="PR Link (e.g. https://github.com/...)"
-                        value={handoffPr}
-                        onChange={(e) => setHandoffPr(e.target.value)}
-                        style={{ fontSize: '0.78rem', padding: '0.4rem' }}
-                      />
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Staging Build (e.g. #413)"
-                        value={handoffBuild}
-                        onChange={(e) => setHandoffBuild(e.target.value)}
-                        style={{ fontSize: '0.78rem', padding: '0.4rem' }}
-                      />
-                      <textarea
-                        className="form-textarea"
-                        placeholder="What should QA test specifically?"
-                        value={handoffNotes}
-                        onChange={(e) => setHandoffNotes(e.target.value)}
-                        style={{ fontSize: '0.78rem', minHeight: '60px' }}
-                      />
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          style={{ fontSize: '0.78rem', padding: '0.4rem 0.8rem' }}
-                          onClick={handleHandoffSubmit}
-                        >
-                          Mark Ready for Retest
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ fontSize: '0.78rem' }}
-                          onClick={() => setShowHandoffBox(false)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* SECTION 1: QA DEFECTS & BUGS ON THIS FEATURE */}
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '0.85rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Bug size={18} color="var(--status-critical)" />
-                  <span style={{ fontSize: '1rem', fontWeight: 700 }}>
-                    Defects & Bugs on this Feature ({bugs.length})
-                  </span>
-                  {openBugs.length > 0 && (
-                    <span className="tag-pill tag-severity-critical" style={{ fontSize: '0.7rem' }}>
-                      {openBugs.length} Blocking
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-                    onClick={() => {
-                      if (updateDefectsFilter) {
-                        updateDefectsFilter({
-                          featureFilter: selectedFeature.id,
-                          moduleFilter: (selectedFeature.moduleName || 'General').trim(),
-                          typeFilter: 'bug'
-                        });
-                      }
-                      closeFeature();
-                      if (setActiveTab) setActiveTab('board');
-                    }}
-                    title="View this feature's bugs in the main Defects table"
-                  >
-                    <ExternalLink size={13} />
-                    <span>View in Defects</span>
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: 'var(--status-critical)' }}
-                    onClick={() => setShowAddBugForm(!showAddBugForm)}
-                  >
-                    <Plus size={13} />
-                    <span>Log Bug on Feature</span>
-                  </button>
-                </div>
+              <div className="fd-stat-meta">
+                <span>{futureOpen} pending</span>
+                <span className="ok">{futureDone} done</span>
               </div>
-
-              {/* Inline Add Bug Form */}
-              {showAddBugForm && (
-                <form
-                  onSubmit={handleAddBugSubmit}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--status-critical-border)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: '1.25rem',
-                    marginBottom: '1rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.75rem'
-                  }}
-                >
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--status-critical)' }}>
-                    🐛 Report Defect Found on {selectedFeature.name}
-                  </span>
-
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Defect Title (e.g. Phone number accepts letters on Safari)..."
-                    value={bugTitle}
-                    onChange={(e) => setBugTitle(e.target.value)}
-                    required
-                  />
-
-                  <div className="responsive-form-grid-2">
-                    <div>
-                      <label className="form-label">Severity</label>
-                      <select
-                        className="form-select"
-                        value={bugSeverity}
-                        onChange={(e) => setBugSeverity(e.target.value)}
-                      >
-                        <option value="Critical">🔴 Critical (Release Blocker)</option>
-                        <option value="High">🟠 High Priority</option>
-                        <option value="Medium">🟡 Medium</option>
-                        <option value="Low">🔵 Low</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="form-label">Steps to Reproduce</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="1. Enter email, 2. Submit..."
-                        value={bugRepro}
-                        onChange={(e) => setBugRepro(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="responsive-form-grid-2">
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Expected behavior..."
-                      value={bugExpected}
-                      onChange={(e) => setBugExpected(e.target.value)}
-                    />
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Actual failure observed..."
-                      value={bugActual}
-                      onChange={(e) => setBugActual(e.target.value)}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowAddBugForm(false)}
-                      style={{ fontSize: '0.8rem' }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={isSubmittingBug}
-                      style={{ fontSize: '0.8rem' }}
-                    >
-                      {isSubmittingBug ? 'Saving...' : 'Save Bug & Notify Dev'}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Bug List */}
-              {bugs.length === 0 ? (
-                <div
-                  style={{
-                    padding: '1.5rem',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-md)',
-                    textAlign: 'center',
-                    color: 'var(--text-muted)',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  No bugs reported on this feature yet! Click "Log Bug on Feature" to add test findings.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                  {bugs.map((bug) => {
-                    const isVerified = bug.status === 'verified';
-                    const isReadyRetest = bug.status === 'ready_for_qa';
-                    const isCritical = bug.severity === 'Critical';
-
-                    return (
-                      <div
-                        key={bug.id}
-                        style={{
-                          background: isVerified ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-secondary)',
-                          border: `1px solid ${
-                            isVerified
-                              ? 'rgba(16, 185, 129, 0.25)'
-                              : isCritical
-                              ? 'var(--status-critical-border)'
-                              : 'var(--border-subtle)'
-                          }`,
-                          borderRadius: 'var(--radius-md)',
-                          padding: '0.85rem 1rem',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.45rem'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span className="ticket-id" style={{ fontSize: '0.75rem' }}>
-                              {bug.id}
-                            </span>
-                            <span
-                              className="tag-pill"
-                              style={{
-                                background: isCritical ? 'var(--status-critical-bg)' : 'var(--bg-surface)',
-                                color: isCritical ? 'var(--status-critical)' : 'var(--text-secondary)',
-                                fontSize: '0.68rem'
-                              }}
-                            >
-                              {bug.severity}
-                            </span>
-                            <span
-                              className="tag-pill"
-                              style={{
-                                background: isVerified
-                                  ? 'rgba(16, 185, 129, 0.15)'
-                                  : isReadyRetest
-                                  ? 'var(--status-ready-bg)'
-                                  : bug.status === 'qa_failed'
-                                  ? 'var(--status-critical-bg)'
-                                  : 'var(--status-medium-bg)',
-                                color: isVerified
-                                  ? '#10b981'
-                                  : isReadyRetest
-                                  ? 'var(--status-ready)'
-                                  : bug.status === 'qa_failed'
-                                  ? 'var(--status-critical)'
-                                  : 'var(--status-medium)',
-                                fontSize: '0.68rem'
-                              }}
-                            >
-                              {isVerified
-                                ? 'Verified ✅'
-                                : isReadyRetest
-                                ? 'Ready for Retest 🚀'
-                                : bug.status === 'qa_failed'
-                                ? 'QA Failed ❌'
-                                : 'Need Dev ⚠️'}
-                            </span>
-                          </div>
-
-                          {/* Quick Advance for this specific bug */}
-                          <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            {bug.status === 'open' && (
-                              <button
-                                className="quick-advance-btn"
-                                style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)', borderColor: 'var(--accent-dev-border)' }}
-                                onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'in_dev')}
-                                title="Developer starts working on this defect"
-                              >
-                                <span>In Dev ➔</span>
-                              </button>
-                            )}
-
-                            {(bug.status === 'open' || bug.status === 'in_dev') && (
-                              <button
-                                className="quick-advance-btn"
-                                onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'ready_for_qa')}
-                                title="Developer marks this specific bug fixed"
-                              >
-                                <span>Dev Fixed ➔</span>
-                              </button>
-                            )}
-
-                            {bug.status === 'ready_for_qa' ? (
-                              <div style={{ display: 'flex', gap: '0.35rem' }}>
-                                <button
-                                  className="quick-advance-btn"
-                                  style={{ background: 'var(--accent-qa-subtle)', color: 'var(--accent-qa)', borderColor: 'var(--accent-qa-border)' }}
-                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'verified')}
-                                  title="QA confirms bug is resolved"
-                                >
-                                  <Check size={11} />
-                                  <span>QA Pass</span>
-                                </button>
-                                <button
-                                  className="quick-advance-btn"
-                                  style={{ background: 'var(--status-critical-bg)', color: 'var(--status-critical)', borderColor: 'var(--status-critical-border)' }}
-                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'qa_failed')}
-                                  title="QA retest failed"
-                                >
-                                  <X size={11} />
-                                  <span>QA Fail</span>
-                                </button>
-                              </div>
-                            ) : null}
-
-                            {bug.status === 'qa_failed' ? (
-                              <div style={{ display: 'flex', gap: '0.35rem' }}>
-                                <button
-                                  className="quick-advance-btn"
-                                  style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)', borderColor: 'var(--accent-dev-border)' }}
-                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'in_dev')}
-                                  title="Developer starts rework on failed defect"
-                                >
-                                  <span>In Dev ➔</span>
-                                </button>
-                                <button
-                                  className="quick-advance-btn"
-                                  onClick={() => updateFeatureBugStatus(selectedFeature.id, bug.id, 'ready_for_qa')}
-                                  title="Developer marks rework as Dev Fixed"
-                                >
-                                  <span>Dev Fixed ➔</span>
-                                </button>
-                              </div>
-                            ) : null}
-
-                            {bug.status === 'verified' && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--accent-qa)', fontWeight: 600 }}>
-                                Verified
-                              </span>
-                            )}
-
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              style={{
-                                padding: '3px',
-                                width: '24px',
-                                height: '24px',
-                                color: '#f59e0b',
-                                border: '1px solid rgba(245, 158, 11, 0.35)',
-                                background: 'rgba(245, 158, 11, 0.08)'
-                              }}
-                              onClick={() => openMoveToFuture(selectedFeature.id, 'bug', bug.id)}
-                              title="Move to Future Improvements"
-                            >
-                              <Hourglass size={12} />
-                            </button>
-
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              style={{
-                                padding: '3px',
-                                width: '24px',
-                                height: '24px',
-                                color: 'var(--status-critical)',
-                                border: '1px solid var(--status-critical-border)',
-                                background: 'var(--status-critical-bg)'
-                              }}
-                              onClick={() => {
-                                if (window.confirm(`Delete defect [${bug.id}] "${bug.title}"?`)) {
-                                  deleteBugFromFeature(selectedFeature.id, bug.id);
-                                }
-                              }}
-                              title="Delete Defect"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {bug.title}
-                        </div>
-
-                        {bug.reproSteps && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            <strong>Repro: </strong> {bug.reproSteps}
-                          </div>
-                        )}
-                        {bug.devNote && (
-                          <div style={{ fontSize: '0.78rem', color: '#c084fc', marginTop: '2px' }}>
-                            <strong>Dev Note: </strong> {bug.devNote}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* SECTION 2: QA SUGGESTIONS & IMPROVEMENTS */}
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '0.85rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Lightbulb size={18} color="#eab308" />
-                  <span style={{ fontSize: '1rem', fontWeight: 700 }}>
-                    QA Usability Suggestions & Enhancements ({suggestions.length})
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-                    onClick={() => {
-                      if (updateDefectsFilter) {
-                        updateDefectsFilter({
-                          featureFilter: selectedFeature.id,
-                          moduleFilter: (selectedFeature.moduleName || 'General').trim(),
-                          typeFilter: 'suggestion'
-                        });
-                      }
-                      closeFeature();
-                      if (setActiveTab) setActiveTab('board');
-                    }}
-                    title="View this feature's suggestions in the main Defects table"
-                  >
-                    <ExternalLink size={13} />
-                    <span>View in Defects</span>
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', color: '#eab308' }}
-                    onClick={() => setShowAddSuggForm(!showAddSuggForm)}
-                  >
-                    <Plus size={13} />
-                    <span>Add Suggestion</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Inline Add Suggestion Form */}
-              {showAddSuggForm && (
-                <form
-                  onSubmit={handleAddSuggSubmit}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid rgba(234, 179, 8, 0.3)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: '1.25rem',
-                    marginBottom: '1rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.75rem'
-                  }}
-                >
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#eab308' }}>
-                    💡 Suggest an Improvement for {selectedFeature.name}
-                  </span>
-
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Suggestion (e.g. Add search-as-you-type filter to customer table)..."
-                    value={suggTitle}
-                    onChange={(e) => setSuggTitle(e.target.value)}
-                    required
-                  />
-
-                  <div className="responsive-form-grid-2">
-                    <div>
-                      <label className="form-label">Priority</label>
-                      <select
-                        className="form-select"
-                        value={suggPriority}
-                        onChange={(e) => setSuggPriority(e.target.value)}
-                      >
-                        <option value="High">High</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Low">Low</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="form-label">Why is this helpful?</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Improves user efficiency when handling > 100 items..."
-                        value={suggNotes}
-                        onChange={(e) => setSuggNotes(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowAddSuggForm(false)}
-                      style={{ fontSize: '0.8rem' }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={isSubmittingSugg}
-                      style={{ fontSize: '0.8rem' }}
-                    >
-                      {isSubmittingSugg ? 'Saving...' : 'Save Suggestion'}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Suggestions List */}
-              {suggestions.length === 0 ? (
-                <div
-                  style={{
-                    padding: '1.25rem',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-md)',
-                    textAlign: 'center',
-                    color: 'var(--text-muted)',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  No suggestions recorded yet. QA can suggest usability or polish enhancements here!
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                  {suggestions.map((sugg) => (
-                    <div
-                      key={sugg.id}
-                      style={{
-                        background: 'var(--bg-secondary)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '0.75rem 1rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '2px' }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#eab308' }}>
-                            {sugg.id}
-                          </span>
-                          <span className="tag-pill" style={{ fontSize: '0.65rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
-                            {sugg.priority}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{sugg.title}</div>
-                        {sugg.notes && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sugg.notes}</div>
-                        )}
-                        {sugg.devNote && (
-                          <div style={{ fontSize: '0.75rem', color: '#c084fc', marginTop: '2px' }}>
-                            <strong>Dev Note: </strong> {sugg.devNote}
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-                        <select
-                          className="form-select"
-                          value={sugg.status || 'open'}
-                          onChange={(e) => updateSuggestionStatus(selectedFeature.id, sugg.id, e.target.value)}
-                          style={{ fontSize: '0.75rem', padding: '0.3rem', width: 'auto' }}
-                        >
-                          <option value="open">Need Dev</option>
-                          <option value="in_dev">In Dev</option>
-                          <option value="ready_for_qa">Dev Fixed</option>
-                          <option value="verified">QA Passed</option>
-                          <option value="qa_failed">QA Failed</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          style={{
-                            padding: '3px',
-                            width: '24px',
-                            height: '24px',
-                            color: '#f59e0b',
-                            border: '1px solid rgba(245, 158, 11, 0.35)',
-                            background: 'rgba(245, 158, 11, 0.08)'
-                          }}
-                          onClick={() => openMoveToFuture(selectedFeature.id, 'suggestion', sugg.id)}
-                          title="Move to Future Improvements"
-                        >
-                          <Hourglass size={12} />
-                        </button>
-
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          style={{
-                            padding: '3px',
-                            width: '24px',
-                            height: '24px',
-                            color: 'var(--status-critical)',
-                            border: '1px solid var(--status-critical-border)',
-                            background: 'var(--status-critical-bg)'
-                          }}
-                          onClick={() => {
-                            if (window.confirm(`Delete suggestion [${sugg.id}] "${sugg.title}"?`)) {
-                              deleteSuggestionFromFeature(selectedFeature.id, sugg.id);
-                            }
-                          }}
-                          title="Delete Suggestion"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* SECTION 3: FUTURE IMPROVEMENTS (pending dependencies, suggestions, reminders) */}
-            <FeatureFutureItemsSection feature={selectedFeature} />
+            </button>
           </div>
 
-          {/* Right Sidebar: Quality Gate & Sign-off */}
-          <div
-            style={{
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '1.25rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1.2rem',
-              height: 'fit-content'
-            }}
-          >
-            {/* Feature Sign-off Gate */}
-            <div>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  color: 'var(--text-muted)',
-                  display: 'block',
-                  marginBottom: '0.6rem'
-                }}
-              >
-                Feature Sign-off Gate
-              </span>
+          {/* Next step */}
+          <div className="fd-next">
+            <span className="fd-next-label">Next step</span>
+            <div className="fd-next-actions">{renderNextStep()}</div>
+            <select
+              className="form-select fd-status-select"
+              value={f.status}
+              onChange={(e) => (e.target.value === 'verified' ? startClose() : updateFeatureStatus(f.id, e.target.value))}
+              title="Change stage"
+            >
+              {Object.entries(FEATURE_STATUS).map(([k, v]) => (
+                <option key={k} value={k} disabled={k === 'verified' && f.status !== 'verified' && !isQaUser}>
+                  {v}
+                  {k === 'verified' && f.status !== 'verified' && !isQaUser ? ' (QA only)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              {/* Condition 1: Critical Bugs */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.45rem 0',
-                  fontSize: '0.82rem',
-                  borderBottom: '1px solid var(--border-subtle)'
+          {showCloseConfirm && isQaUser && f.status !== 'verified' && (
+            <CloseFeatureConfirm
+              feature={f}
+              check={closeCheck}
+              onCancel={() => setShowCloseConfirm(false)}
+              onReview={() => {
+                setShowCloseConfirm(false);
+                setTab(closeCheck.openBugs.length ? 'bugs' : 'suggestions');
+              }}
+              onPending={() => {
+                setShowCloseConfirm(false);
+                setShowCloseWithPending(true);
+              }}
+            />
+          )}
+
+          {showHandoff && f.status === 'in_dev' && (
+            <form className="fd-form" onSubmit={submitHandoff}>
+              <div className="fd-form-row">
+                <input className="form-input" placeholder="PR link (optional)" value={handoff.pr} onChange={(e) => setHandoff((h) => ({ ...h, pr: e.target.value }))} />
+                <input
+                  className="form-input"
+                  placeholder={`Staging build${f.stagingBuild ? ` (current ${f.stagingBuild})` : ', e.g. #413'}`}
+                  value={handoff.build}
+                  onChange={(e) => setHandoff((h) => ({ ...h, build: e.target.value }))}
+                />
+              </div>
+              <textarea
+                className="form-textarea"
+                rows={2}
+                placeholder="What should QA test?"
+                value={handoff.notes}
+                onChange={(e) => setHandoff((h) => ({ ...h, notes: e.target.value }))}
+              />
+              <div className="pf-actions">
+                <button type="button" className="fb-btn" onClick={() => setShowHandoff(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="fb-btn fb-btn-primary">
+                  Mark Ready for Retest
+                </button>
+              </div>
+            </form>
+          )}
+
+          {showCloseWithPending && isQaUser && closeCheck.canClose && f.status !== 'verified' && (
+            <div className="fd-form">
+              <div className="pf-note">
+                All QA passed. The feature closes now and the unfinished part (e.g. a pending API) goes to Future Improvements.
+              </div>
+              <FutureItemForm
+                submitLabel="Close Feature & Save"
+                onCancel={() => setShowCloseWithPending(false)}
+                onSubmit={async (data) => {
+                  await addFutureItem(f.id, data, { closeFeature: true });
+                  setShowCloseWithPending(false);
                 }}
+              />
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="fd-tabs">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`fd-tab ${activeTab === t.id ? 'active' : ''} ${t.alert ? 'alert' : ''}`}
+                onClick={() => setTab(t.id)}
               >
-                <span>0 Blocker Bugs</span>
-                {criticalOpenBugs.length === 0 ? (
-                  <span style={{ color: 'var(--accent-qa)', fontWeight: 700 }}>PASS ✅</span>
+                {t.label}
+                {t.count !== undefined && <span className="fd-tab-count">{t.count}</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="fd-tab-body">
+            {activeTab === 'review' && (
+              <div className="fd-list">
+                <p className="pf-note">Items that failed QA retest appear here automatically until they are fixed again.</p>
+                {reviewCount === 0 ? (
+                  <div className="fi-empty">Nothing to review — no QA failures.</div>
                 ) : (
-                  <span style={{ color: 'var(--status-critical)', fontWeight: 700 }}>
-                    {criticalOpenBugs.length} FAIL ❌
-                  </span>
+                  <>
+                    {failedBugs.map((b) => (
+                      <ItemRow
+                        key={`b-${b.id}`}
+                        item={b}
+                        kind="bug"
+                        featureId={f.id}
+                        focused={focusIds.includes(b.id)}
+                        scrollTo={focusIds[0] === b.id}
+                      />
+                    ))}
+                    {failedSuggs.map((s) => (
+                      <ItemRow
+                        key={`s-${s.id}`}
+                        item={s}
+                        kind="suggestion"
+                        featureId={f.id}
+                        focused={focusIds.includes(s.id)}
+                        scrollTo={focusIds[0] === s.id}
+                      />
+                    ))}
+                  </>
                 )}
               </div>
+            )}
 
-              {/* Condition 2: All Bugs Verified */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.45rem 0',
-                  fontSize: '0.82rem',
-                  borderBottom: '1px solid var(--border-subtle)'
-                }}
-              >
-                <span>All Bugs Verified</span>
-                {openBugs.length === 0 ? (
-                  <span style={{ color: 'var(--accent-qa)', fontWeight: 700 }}>100% ✅</span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    {bugs.length - openBugs.length}/{bugs.length}
+            {activeTab === 'bugs' && <ItemList kind="bug" items={bugs} feature={f} focusIds={focusIds} />}
+            {activeTab === 'suggestions' && <ItemList kind="suggestion" items={suggestions} feature={f} focusIds={focusIds} />}
+            {activeTab === 'future' && <FeatureFutureItemsSection feature={f} />}
+
+            {activeTab === 'details' && (
+              <div className="fd-details">
+                <label className="pf-field">
+                  <span>
+                    <FolderTree size={11} /> Module
                   </span>
+                  <select className="form-select" value={f.moduleName || 'General'} onChange={(e) => updateFeatureModule(f.id, e.target.value)}>
+                    {availableModules.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="fd-detail-grid">
+                  <div>
+                    <span>Staging build</span>
+                    <p>{f.stagingBuild || '—'}</p>
+                  </div>
+                  <div>
+                    <span>Target release</span>
+                    <p>{f.targetRelease || '—'}</p>
+                  </div>
+                  <div>
+                    <span>Pull request</span>
+                    <p>
+                      {f.prLink ? (
+                        <a href={f.prLink} target="_blank" rel="noreferrer">
+                          <GitPullRequest size={12} /> Open PR <ExternalLink size={10} />
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {f.devNotes && (
+                  <div className="fd-detail-grid">
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span>Developer notes</span>
+                      <p style={{ whiteSpace: 'pre-wrap' }}>{f.devNotes}</p>
+                    </div>
+                  </div>
                 )}
-              </div>
-
-              {/* Master Verify & Close Button */}
-              <div style={{ marginTop: '1rem' }}>
-                {selectedFeature.status !== 'verified' ? (
-                  <button
-                    className="btn btn-qa"
-                    style={{ width: '100%', padding: '0.65rem' }}
-                    onClick={() => updateFeatureStatus(selectedFeature.id, 'verified')}
-                    disabled={!canVerifyFeature}
-                    title={
-                      !canVerifyFeature
-                        ? 'Resolve all critical bugs before closing feature'
-                        : 'Verify and officially close feature'
-                    }
-                  >
-                    <CheckCircle2 size={16} />
-                    <span>Verify & Close Feature</span>
+                <div className="pf-actions" style={{ justifyContent: 'flex-start' }}>
+                  <button type="button" className="fb-btn" onClick={() => viewInDefects('bug')}>
+                    <ExternalLink size={13} /> Defects in table
                   </button>
-                ) : (
-                  <div
-                    style={{
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      color: '#10b981',
-                      padding: '0.65rem',
-                      borderRadius: 'var(--radius-md)',
-                      textAlign: 'center',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem'
-                    }}
-                  >
-                    <Sparkles size={16} />
-                    <span>Feature Verified & Closed</span>
-                  </div>
-                )}
-
-                {/* Close now, track the unfinished part (e.g. API not ready) as a future item */}
-                {selectedFeature.status !== 'verified' && canVerifyFeature && (
-                  <div style={{ marginTop: '0.6rem' }}>
-                    {!showCloseWithPending ? (
-                      <button
-                        type="button"
-                        className="fb-btn"
-                        style={{ width: '100%', justifyContent: 'center' }}
-                        onClick={() => setShowCloseWithPending(true)}
-                        title="All QA passed, but something is still waiting (e.g. an API). Close now and track it."
-                      >
-                        <span>Close with Pending Item…</span>
-                      </button>
-                    ) : (
-                      <div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 0.4rem', lineHeight: 1.35 }}>
-                          Closes the feature now. The pending part goes to Future Improvements in the Release Gate.
-                        </div>
-                        <FutureItemForm
-                          submitLabel="Close Feature & Save"
-                          onCancel={() => setShowCloseWithPending(false)}
-                          onSubmit={async (data) => {
-                            await addFutureItem(selectedFeature.id, data, { closeFeature: true });
-                            setShowCloseWithPending(false);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!canVerifyFeature && (
-                  <div
-                    style={{
-                      fontSize: '0.73rem',
-                      color: 'var(--status-critical)',
-                      marginTop: '0.4rem',
-                      lineHeight: 1.3
-                    }}
-                  >
-                    ⚠️ Blocked: {criticalOpenBugs.length} critical defect(s) must be fixed and verified before sign-off.
-                  </div>
-                )}
+                  <button type="button" className="fb-btn" onClick={() => viewInDefects('suggestion')}>
+                    <ExternalLink size={13} /> Suggestions in table
+                  </button>
+                  <button type="button" className="fb-btn" onClick={() => openEditFeatureModal(f)}>
+                    <Edit2 size={13} /> Edit feature
+                  </button>
+                </div>
               </div>
-            </div>
-
-            {/* Module Selector */}
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <FolderTree size={13} color="var(--accent-dev)" />
-                <span>Belongs to Module</span>
-              </label>
-              <select
-                className="form-select"
-                value={selectedFeature.moduleName || 'General'}
-                onChange={(e) => updateFeatureModule(selectedFeature.id, e.target.value)}
-              >
-                {availableModules.map((m) => (
-                  <option key={m} value={m}>
-                    📁 {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Workflow Status Selector */}
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Feature Lifecycle Status</label>
-              <select
-                className="form-select"
-                value={selectedFeature.status}
-                onChange={(e) => updateFeatureStatus(selectedFeature.id, e.target.value)}
-              >
-                <option value="backlog">0. Feature Pool (Not Started)</option>
-                <option value="in_dev">1. In Development</option>
-                <option value="ready_for_qa">2. Ready for Retest (Staging)</option>
-                <option value="in_qa">3. QA Verification & Feedback</option>
-                <option value="verified">4. Verified & Closed</option>
-              </select>
-            </div>
-
-            {/* Assigned Dev */}
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Assigned Developer</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                {dev && (
-                  <div className="user-avatar-small" style={{ background: dev.color }}>
-                    {dev.initials}
-                  </div>
-                )}
-                <span>{dev?.name || 'Unassigned'}</span>
-              </div>
-            </div>
-
-            {/* Assigned QA */}
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Assigned QA Lead</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                {qa && (
-                  <div className="user-avatar-small" style={{ background: qa.color }}>
-                    {qa.initials}
-                  </div>
-                )}
-                <span>{qa?.name || 'Unassigned'}</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

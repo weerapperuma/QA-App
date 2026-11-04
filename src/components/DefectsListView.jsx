@@ -35,6 +35,7 @@ export default function DefectsListView() {
     updateSuggestionStatus,
     updateFeatureSuggestion,
     convertDefectType,
+    canQaDecide,
     openMoveToFuture,
     addBugToFeature,
     addSuggestionToFeature,
@@ -488,11 +489,11 @@ export default function DefectsListView() {
           <option value="ready_for_qa">
             🟣 Dev Fixed
           </option>
-          <option value="verified">
-            🟢 QA Passed
+          <option value="verified" disabled={!canQaDecide && currentStatus !== 'verified'}>
+            🟢 QA Passed{!canQaDecide ? ' (QA only)' : ''}
           </option>
-          <option value="qa_failed">
-            🔴 QA Failed
+          <option value="qa_failed" disabled={!canQaDecide && currentStatus !== 'qa_failed'}>
+            🔴 QA Failed{!canQaDecide ? ' (QA only)' : ''}
           </option>
         </select>
         <ChevronDown
@@ -1175,8 +1176,12 @@ export default function DefectsListView() {
                       <option value="open">🟡 Need Dev (Open)</option>
                       <option value="in_dev">🔵 In Development</option>
                       <option value="ready_for_qa">🟣 Dev Fixed (Ready for QA)</option>
-                      <option value="verified">🟢 QA Passed (Closed)</option>
-                      <option value="qa_failed">🔴 QA Failed (Retest Failed)</option>
+                      <option value="verified" disabled={!canQaDecide && editItem?.status !== 'verified'}>
+                        🟢 QA Passed (Closed){!canQaDecide ? ' — QA only' : ''}
+                      </option>
+                      <option value="qa_failed" disabled={!canQaDecide && editItem?.status !== 'qa_failed'}>
+                        🔴 QA Failed (Retest Failed){!canQaDecide ? ' — QA only' : ''}
+                      </option>
                     </select>
                   </div>
                 </div>
