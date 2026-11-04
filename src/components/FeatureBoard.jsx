@@ -964,7 +964,7 @@ export default function FeatureBoard() {
                     return (
                       <div
                         key={feat.id}
-                        className={`ticket-card ${draggedFeatId === feat.id ? 'is-dragging' : ''}`}
+                        className={`ticket-card pool-card ${isChecked ? 'is-selected' : ''} ${draggedFeatId === feat.id ? 'is-dragging' : ''}`}
                         draggable={true}
                         onDragStart={(e) => handleDragStart(e, feat.id)}
                         onDragEnd={handleDragEnd}
@@ -972,112 +972,58 @@ export default function FeatureBoard() {
                           if (!wasDraggingRef.current) openFeature(feat);
                         }}
                         title="Drag into In Development, or click to view details"
-                        style={{
-                          padding: '0.45rem 0.55rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.45rem',
-                          cursor: 'grab',
-                          borderStyle: 'dashed',
-                          borderColor: isChecked ? 'var(--accent-dev)' : undefined
-                        }}
                       >
                         <input
                           type="checkbox"
+                          className="pool-card-check"
                           checked={isChecked}
                           onClick={(e) => e.stopPropagation()}
                           onChange={() => togglePoolSelect(feat.id)}
                           title="Select for bulk start"
+                          aria-label={`Select ${feat.name}`}
                         />
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                            <span
-                              style={{
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                color: 'var(--accent-dev)'
-                              }}
-                            >
-                              {feat.code || feat.id}
-                            </span>
-                            {isAllModules && feat.moduleName && (
-                              <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>📁 {feat.moduleName}</span>
-                            )}
+                        <div className="pool-card-main">
+                          <div className="pool-card-meta">
+                            <span className="pool-card-code">{feat.code || feat.id}</span>
+                            {isAllModules && feat.moduleName && <span className="pool-card-module">{feat.moduleName}</span>}
                           </div>
-                          <div
-                            style={{
-                              fontSize: '0.8rem',
-                              fontWeight: 600,
-                              color: 'var(--text-primary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title={feat.name}
-                          >
+                          <div className="pool-card-name" title={feat.name}>
                             {feat.name}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateFeatureStatus(feat.id, 'in_dev');
-                          }}
-                          title="Start development"
-                          style={{
-                            width: '22px',
-                            height: '22px',
-                            flexShrink: 0,
-                            color: 'var(--accent-dev)',
-                            background: 'rgba(56, 189, 248, 0.1)',
-                            border: '1px solid var(--accent-dev-border)'
-                          }}
-                        >
-                          <Play size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditFeatureModal(feat);
-                          }}
-                          title="Edit Feature"
-                          style={{
-                            width: '22px',
-                            height: '22px',
-                            flexShrink: 0,
-                            color: 'var(--text-muted)',
-                            background: 'transparent',
-                            border: 'none'
-                          }}
-                        >
-                          <Edit2 size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Delete feature "${feat.name}" from the pool?`)) {
-                              deleteFeature(feat.id);
-                            }
-                          }}
-                          title="Delete Feature"
-                          style={{
-                            width: '22px',
-                            height: '22px',
-                            flexShrink: 0,
-                            color: 'var(--text-muted)',
-                            background: 'transparent',
-                            border: 'none'
-                          }}
-                        >
-                          <Trash2 size={11} />
-                        </button>
+                        <div className="pool-card-actions" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="pool-card-btn start"
+                            onClick={() => updateFeatureStatus(feat.id, 'in_dev')}
+                            title="Start development"
+                            aria-label="Start development"
+                          >
+                            <Play size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pool-card-btn extra"
+                            onClick={() => openEditFeatureModal(feat)}
+                            title="Edit Feature"
+                            aria-label="Edit feature"
+                          >
+                            <Edit2 size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pool-card-btn extra danger"
+                            onClick={() => {
+                              if (window.confirm(`Delete feature "${feat.name}" from the pool?`)) {
+                                deleteFeature(feat.id);
+                              }
+                            }}
+                            title="Delete Feature"
+                            aria-label="Delete feature"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })

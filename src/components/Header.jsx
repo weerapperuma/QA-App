@@ -14,7 +14,8 @@ import {
   Plus,
   UserCog,
   Activity,
-  Hourglass
+  Hourglass,
+  ClipboardCheck
 } from 'lucide-react';
 import { getRoles, ROLE_SHORT } from '../utils/roles';
 
@@ -218,6 +219,17 @@ export default function Header() {
           <span className="nav-tab-badge" style={{ marginLeft: '4px' }}>
             {projectFeatures.length}
           </span>
+        </button>
+
+        <button
+          className={`persona-btn ${!workspaceLocked && activeTab === 'devtesting' ? 'active-all' : ''}`}
+          onClick={() => setActiveTab('devtesting')}
+          disabled={workspaceLocked}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Developer testing checkpoints'}
+          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
+        >
+          <ClipboardCheck size={14} color="var(--accent-dev)" />
+          <span>Dev Testing</span>
         </button>
 
         <button

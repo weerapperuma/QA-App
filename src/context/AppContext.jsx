@@ -58,6 +58,7 @@ import {
   defaultColorForRoles,
   makeInitials
 } from '../utils/roles';
+import { DEV_STAGE_IDS, DEV_TEST_STAGES } from '../utils/devTesting';
 
 const AppContext = createContext();
 
@@ -2024,6 +2025,63 @@ export function AppProvider({ children }) {
   };
 
   // Pull one or more pooled (backlog) features into development in a single batch
+  // ===== Developer testing checkpoints (sequential) =====
+  // feature.devChecks = { [stageId]: { done, by, byName, at } }
+  // Save the developer's working order of features (Dev Testing page): orderedIds top → bottom
+  const reorderDevTesting = async (orderedIds = []) => {
+    const rank = new Map(orderedIds.map((id, i) => [id, (i + 1) * 1000]));
+    const changed = (features || [])
+      .filter((f) => rank.has(f.id) && f.devOrder !== rank.get(f.id))
+      .map((f) => ({ ...f, devOrder: rank.get(f.id) }));
+    if (changed.length === 0) return;
+    const byId = new Map(changed.map((f) => [f.id, f]));
+    setFeatures((prev) => prev.map((f) => (byId.has(f.id) ? { ...f, devOrder: byId.get(f.id).devOrder } : f)));
+    if (firebaseStatus === 'connected' && changed.length > 0) {
+      await saveFeaturesOrderToFirestore(changed);
+    }
+  };
+
+  const setDevCheck = async (featureId, stageId, done) => {
+    if (!hasRole(currentUser, ROLES.DEVELOPER)) {
+      addToast('Developer testing stages can only be updated by developers.', 'warning', 'Developers Only');
+      return false;
+    }
+    const feat = features.find((f) => f.id === featureId);
+    const idx = DEV_STAGE_IDS.indexOf(stageId);
+    if (!feat || idx === -1) return false;
+    const checks = { ...(feat.devChecks || {}) };
+
+    if (done) {
+      const prevMissing = DEV_STAGE_IDS.slice(0, idx).find((id) => !checks[id]?.done);
+      if (prevMissing) {
+        const stage = DEV_TEST_STAGES.find((x) => x.id === prevMissing);
+        addToast(`Pass "${stage?.label}" first.`, 'warning', 'Stage Order');
+        return false;
+      }
+      checks[stageId] = { done: true, by: currentUser?.id || '', byName: currentUser?.name || '', at: new Date().toISOString() };
+    } else {
+      // Un-passing a stage also clears every later stage
+      DEV_STAGE_IDS.slice(idx).forEach((id) => delete checks[id]);
+    }
+
+    const updated = { ...feat, devChecks: checks, updatedAt: new Date().toISOString() };
+    setFeatures((prev) => prev.map((f) => (f.id === featureId ? updated : f)));
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updated);
+    }
+
+    if (done) {
+      const stage = DEV_TEST_STAGES[idx];
+      const allDone = DEV_STAGE_IDS.every((id) => checks[id]?.done);
+      addToast(
+        allDone ? `"${feat.name}" passed all developer testing stages.` : `"${feat.name}": ${stage.label} passed.`,
+        allDone ? 'verified' : 'success',
+        allDone ? 'Dev Testing Complete' : 'Stage Passed'
+      );
+    }
+    return true;
+  };
+
   const startFeaturesDevelopment = async (featureIds = []) => {
     const idSet = new Set(featureIds);
     const targets = (features || []).filter((f) => idSet.has(f.id) && f.status === 'backlog');
@@ -3207,6 +3265,8 @@ export function AppProvider({ children }) {
         moveFeatureCard,
         reorderFeatureInPhase,
         startFeaturesDevelopment,
+        setDevCheck,
+        reorderDevTesting,
         featureFocus,
         getFeatureCloseCheck,
         canQaDecide,
