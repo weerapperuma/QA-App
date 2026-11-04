@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Bug,
@@ -7,18 +7,21 @@ import {
   ArrowRight,
   Sparkles,
   Plus,
-  GripVertical,
   FolderTree,
   FolderPlus,
-  Layers,
   ChevronRight,
+  ChevronLeft,
   ChevronUp,
   ChevronDown,
-  Filter,
   Kanban as KanbanIcon,
   ListTree,
   Trash2,
-  Edit2
+  Edit2,
+  Inbox,
+  Hourglass,
+  Play,
+  Search,
+  X
 } from 'lucide-react';
 
 const FEATURE_COLUMNS = [
@@ -28,23 +31,27 @@ const FEATURE_COLUMNS = [
   { id: 'verified', title: '4. Verified & Closed', label: 'Completed' }
 ];
 
+// Bug / suggestion statuses that count as resolved
+const DONE_ITEM_STATUSES = ['verified', 'implemented', 'qa_passed', 'qa passed', 'closed'];
+const isItemDone = (st) => DONE_ITEM_STATUSES.includes((st || '').toLowerCase().trim());
+
 export default function FeatureBoard() {
   const {
     projectFeatures,
     projectModules,
     allModuleNames,
-    activeProject,
     openFeature,
     openEditFeatureModal,
     updateFeatureStatus,
     moveFeatureCard,
     reorderFeatureInPhase,
     deleteFeature,
+    startFeaturesDevelopment,
     team,
     openCreateFeatureModal,
     setIsCreateModuleModalOpen,
     deleteModule,
-    featureBoardModuleFilter: selectedModuleFilter = 'all',
+    featureBoardModuleFilter: storedModuleFilter,
     setFeatureBoardModuleFilter: setSelectedModuleFilter,
     featureBoardViewMode: viewMode = 'kanban',
     setFeatureBoardViewMode: setViewMode
@@ -58,6 +65,13 @@ export default function FeatureBoard() {
 
   // Mobile Column Filter: 'all' | columnId
   const [mobileColFilter, setMobileColFilter] = useState('all');
+
+  // Feature Pool (backlog) UI state
+  const [poolSearch, setPoolSearch] = useState('');
+  // Horizontal board scroll: pool lives off-screen to the left of "In Development"
+  const boardRef = useRef(null);
+  const [isPoolInView, setIsPoolInView] = useState(false);
+  const [poolSelectedIds, setPoolSelectedIds] = useState(() => new Set());
 
   // Distinct module names across all project modules and features
   const distinctModuleNames = Array.from(
@@ -75,11 +89,91 @@ export default function FeatureBoard() {
     );
   };
 
-  // Filter features based on selected module filter (Features ONLY on board!)
+  // Resolve the active module: the remembered choice if it still exists,
+  // otherwise default to the first module (only fall back to "all" when there are no modules).
+  const storedMatch =
+    storedModuleFilter && storedModuleFilter !== 'all'
+      ? distinctModuleNames.find((m) => m.toLowerCase() === storedModuleFilter.toLowerCase())
+      : null;
+  const selectedModuleFilter =
+    storedModuleFilter === 'all' ? 'all' : storedMatch || distinctModuleNames[0] || 'all';
+  const isAllModules = selectedModuleFilter === 'all';
+
+  // Filter features based on selected module filter
   const visibleFeatures = (projectFeatures || []).filter((feat) => {
-    if (selectedModuleFilter === 'all') return true;
+    if (isAllModules) return true;
     return (feat.moduleName || '').trim().toLowerCase() === selectedModuleFilter.trim().toLowerCase();
   });
+
+  // Pool (not yet started) vs. board (in the development lifecycle)
+  const poolFeatures = visibleFeatures.filter((f) => f.status === 'backlog');
+  const boardFeatures = visibleFeatures.filter((f) => f.status !== 'backlog');
+
+  const poolQuery = poolSearch.trim().toLowerCase();
+  const filteredPoolFeatures = poolQuery
+    ? poolFeatures.filter((f) =>
+        [f.name, f.code, f.description, f.moduleName].some((v) => (v || '').toLowerCase().includes(poolQuery))
+      )
+    : poolFeatures;
+  const selectedPoolIds = filteredPoolFeatures.filter((f) => poolSelectedIds.has(f.id)).map((f) => f.id);
+  const allPoolSelected = filteredPoolFeatures.length > 0 && selectedPoolIds.length === filteredPoolFeatures.length;
+
+  const togglePoolSelect = (featId) => {
+    setPoolSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(featId)) next.delete(featId);
+      else next.add(featId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPool = () => {
+    setPoolSelectedIds(allPoolSelected ? new Set() : new Set(filteredPoolFeatures.map((f) => f.id)));
+  };
+
+  const handleStartSelected = async () => {
+    if (selectedPoolIds.length === 0 || !startFeaturesDevelopment) return;
+    await startFeaturesDevelopment(selectedPoolIds);
+    setPoolSelectedIds(new Set());
+  };
+
+  const selectModule = (modName) => {
+    setSelectedModuleFilter(modName);
+    setPoolSelectedIds(new Set());
+    setPoolSearch('');
+  };
+
+  // Scroll the board so the given column sits at the left edge
+  const scrollBoardTo = (colId, smooth = true) => {
+    const board = boardRef.current;
+    if (!board) return;
+    if (colId === 'backlog') {
+      board.scrollTo({ left: 0, behavior: smooth ? 'smooth' : 'auto' });
+      return;
+    }
+    const col = board.querySelector(`[data-col-id="${colId}"]`);
+    if (!col) return;
+    const left = board.scrollLeft + (col.getBoundingClientRect().left - board.getBoundingClientRect().left);
+    board.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  const handleBoardScroll = () => {
+    const board = boardRef.current;
+    if (!board) return;
+    const col = board.querySelector('[data-col-id="in_dev"]');
+    const threshold = col ? col.offsetLeft - board.offsetLeft : 0;
+    // Pool counts as "in view" once the user has scrolled noticeably toward it
+    setIsPoolInView(board.scrollLeft < threshold - 40);
+  };
+
+  // On first view (and when switching module / back to kanban): show the 4 lifecycle columns
+  useLayoutEffect(() => {
+    if (viewMode !== 'kanban') return;
+    scrollBoardTo('in_dev', false);
+  }, [viewMode, selectedModuleFilter]);
+
+  const addFeatureForCurrentModule = () =>
+    openCreateFeatureModal(isAllModules ? undefined : { defaultModuleName: selectedModuleFilter });
 
   // Drag start
   const handleDragStart = (e, featId) => {
@@ -255,225 +349,70 @@ export default function FeatureBoard() {
 
   return (
     <div className="feature-board-view">
-      {/* Top Title & Actions Bar */}
-      <div
-        className="feature-top-bar"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '0.6rem',
-          flexWrap: 'wrap',
-          gap: '0.65rem',
-          flexShrink: 0
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <h1 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
-              {activeProject?.name || 'Project Workspace'}
-            </h1>
-            <span
-              style={{
-                fontSize: '0.74rem',
-                fontFamily: 'var(--font-mono)',
-                background: 'var(--bg-secondary)',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-full)',
-                color: 'var(--text-muted)',
-                border: '1px solid var(--border-subtle)'
-              }}
-            >
-              {projectFeatures.length} Features
-            </span>
-          </div>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '3px', marginBottom: 0 }}>
-            Features organized under business modules (e.g. SETUP, Purchasing and inventory).
-          </p>
+      {/* Toolbar: module tabs (left) + actions (right) */}
+      <div className="fb-toolbar">
+        <div className="fb-module-tabs">
+          {distinctModuleNames.map((modName) => {
+            const isSelected = selectedModuleFilter.toLowerCase() === modName.toLowerCase();
+            return (
+              <button
+                key={modName}
+                type="button"
+                className={`fb-tab ${isSelected ? 'active' : ''}`}
+                onClick={() => selectModule(modName)}
+              >
+                <span>{modName}</span>
+                <span className="fb-tab-count">{getFeaturesInModule(modName).length}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            className={`fb-tab ${isAllModules ? 'active' : ''}`}
+            onClick={() => selectModule('all')}
+          >
+            <span>All</span>
+            <span className="fb-tab-count">{projectFeatures.length}</span>
+          </button>
         </div>
 
-        {/* View Mode Toggle & Action Buttons */}
-        <div className="feature-top-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          {/* View Mode Switcher */}
-          <div
-            style={{
-              display: 'flex',
-              background: 'var(--bg-secondary)',
-              padding: '3px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-medium)'
-            }}
-          >
+        <div className="fb-actions">
+          <div className="fb-segmented">
             <button
-              className={`btn-icon ${viewMode === 'kanban' ? 'active' : ''}`}
-              style={{
-                padding: '4px 10px',
-                fontSize: '0.75rem',
-                width: 'auto',
-                height: 'auto',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                background: viewMode === 'kanban' ? 'var(--bg-surface)' : 'transparent',
-                color: viewMode === 'kanban' ? 'var(--text-primary)' : 'var(--text-muted)',
-                borderRadius: 'var(--radius-sm)'
-              }}
+              type="button"
+              className={viewMode === 'kanban' ? 'active' : ''}
               onClick={() => setViewMode('kanban')}
-              title="Kanban Board View"
+              title="Board view"
             >
               <KanbanIcon size={14} />
-              <span>Kanban Board</span>
+              <span>Board</span>
             </button>
             <button
-              className={`btn-icon ${viewMode === 'modules' ? 'active' : ''}`}
-              style={{
-                padding: '4px 10px',
-                fontSize: '0.75rem',
-                width: 'auto',
-                height: 'auto',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                background: viewMode === 'modules' ? 'var(--bg-surface)' : 'transparent',
-                color: viewMode === 'modules' ? 'var(--text-primary)' : 'var(--text-muted)',
-                borderRadius: 'var(--radius-sm)'
-              }}
+              type="button"
+              className={viewMode === 'modules' ? 'active' : ''}
               onClick={() => setViewMode('modules')}
-              title="Modules & Features List"
+              title="List view"
             >
               <ListTree size={14} />
-              <span>Modules & Features</span>
+              <span>List</span>
             </button>
           </div>
 
-          {/* Modules Button */}
           <button
-            className="btn btn-secondary"
+            type="button"
+            className="fb-btn"
             onClick={() => setIsCreateModuleModalOpen(true)}
-            style={{
-              fontSize: '0.8rem',
-              padding: '0.45rem 0.85rem',
-              background: 'rgba(56, 189, 248, 0.1)',
-              borderColor: 'rgba(56, 189, 248, 0.3)',
-              color: 'var(--accent-dev)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-            title="Manage modules with edit and delete options"
+            title="Manage modules"
           >
             <FolderTree size={14} />
             <span>Modules</span>
-            {distinctModuleNames.length > 0 && (
-              <span
-                style={{
-                  fontSize: '0.68rem',
-                  padding: '1px 6px',
-                  borderRadius: '999px',
-                  background: 'rgba(56, 189, 248, 0.2)',
-                  fontWeight: 700
-                }}
-              >
-                {distinctModuleNames.length}
-              </span>
-            )}
           </button>
 
-          {/* Add Feature Button */}
-          <button
-            className="btn btn-primary"
-            onClick={() => openCreateFeatureModal()}
-            style={{ fontSize: '0.8rem', padding: '0.45rem 0.95rem' }}
-          >
+          <button type="button" className="fb-btn fb-btn-primary" onClick={addFeatureForCurrentModule}>
             <Plus size={14} />
-            <span>+ Add Feature</span>
+            <span>Add Feature</span>
           </button>
         </div>
-      </div>
-
-      {/* Module Navigation & Filter Bar */}
-      <div
-        className="module-filter-bar"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          marginBottom: '0.75rem',
-          flexWrap: 'wrap',
-          flexShrink: 0
-        }}
-      >
-        <span
-          style={{
-            fontSize: '0.74rem',
-            fontWeight: 700,
-            color: 'var(--text-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.3rem',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <Filter size={12} /> Modules:
-        </span>
-
-        {/* All Filter */}
-        <button
-          className={`tag-pill ${selectedModuleFilter === 'all' ? 'active-filter' : ''}`}
-          onClick={() => setSelectedModuleFilter('all')}
-          style={{
-            cursor: 'pointer',
-            padding: '4px 10px',
-            fontSize: '0.75rem',
-            background: selectedModuleFilter === 'all' ? 'var(--accent-dev)' : 'var(--bg-secondary)',
-            color: selectedModuleFilter === 'all' ? '#fff' : 'var(--text-secondary)',
-            border: '1px solid var(--border-medium)',
-            borderRadius: 'var(--radius-full)',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          All Features ({projectFeatures.length})
-        </button>
-
-        {/* Dynamic Module Pills */}
-        {distinctModuleNames.map((modName) => {
-          const count = getFeaturesInModule(modName).length;
-          const isSelected = selectedModuleFilter.toLowerCase() === modName.toLowerCase();
-
-          return (
-            <button
-              key={modName}
-              className={`tag-pill ${isSelected ? 'active-filter' : ''}`}
-              onClick={() => setSelectedModuleFilter(isSelected ? 'all' : modName)}
-              style={{
-                cursor: 'pointer',
-                padding: '4px 10px',
-                fontSize: '0.75rem',
-                background: isSelected ? 'var(--accent-dev)' : 'var(--bg-secondary)',
-                color: isSelected ? '#fff' : 'var(--text-primary)',
-                border: '1px solid var(--border-medium)',
-                borderRadius: 'var(--radius-full)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <span>📁 {modName}</span>
-              <span
-                style={{
-                  fontSize: '0.68rem',
-                  padding: '1px 5px',
-                  borderRadius: '999px',
-                  background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--bg-surface-elevated)',
-                  color: isSelected ? '#fff' : 'var(--text-muted)'
-                }}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
       </div>
 
       {/* VIEW 1: MODULES & FEATURES LIST VIEW */}
@@ -502,7 +441,10 @@ export default function FeatureBoard() {
               </button>
             </div>
           ) : (
-            distinctModuleNames.map((modName) => {
+            (isAllModules
+              ? distinctModuleNames
+              : distinctModuleNames.filter((m) => m.toLowerCase() === selectedModuleFilter.toLowerCase())
+            ).map((modName) => {
               const feats = getFeaturesInModule(modName);
               const verifiedCount = feats.filter((s) => s.status === 'verified').length;
               const passPct = feats.length > 0 ? Math.round((verifiedCount / feats.length) * 100) : 0;
@@ -646,6 +588,8 @@ export default function FeatureBoard() {
 
                         const getStatusBadge = (st) => {
                           switch (st) {
+                            case 'backlog':
+                              return <span className="tag-pill" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', border: '1px dashed var(--border-medium)' }}>In Pool</span>;
                             case 'in_dev':
                               return <span className="tag-pill" style={{ background: 'var(--accent-dev-subtle)', color: 'var(--accent-dev)' }}>In Development</span>;
                             case 'ready_for_qa':
@@ -708,6 +652,22 @@ export default function FeatureBoard() {
                                 <span style={{ fontSize: '0.72rem', color: 'var(--status-critical)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                                   <Bug size={12} /> {openBugs.length}
                                 </span>
+                              )}
+
+                              {feat.status === 'backlog' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateFeatureStatus(feat.id, 'in_dev');
+                                  }}
+                                  title="Pull this feature into development"
+                                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                >
+                                  <Play size={11} />
+                                  <span>Start Dev</span>
+                                </button>
                               )}
 
                               <button
@@ -781,8 +741,16 @@ export default function FeatureBoard() {
               <span>All Columns</span>
               <span className="mobile-col-badge">{visibleFeatures.length}</span>
             </button>
+            <button
+              type="button"
+              className={`mobile-col-tab ${mobileColFilter === 'backlog' ? 'active' : ''}`}
+              onClick={() => setMobileColFilter('backlog')}
+            >
+              <span>Feature Pool</span>
+              <span className="mobile-col-badge">{poolFeatures.length}</span>
+            </button>
             {FEATURE_COLUMNS.map((c) => {
-              const count = visibleFeatures.filter((f) => f.status === c.id).length;
+              const count = boardFeatures.filter((f) => f.status === c.id).length;
               return (
                 <button
                   key={c.id}
@@ -797,16 +765,335 @@ export default function FeatureBoard() {
             })}
           </div>
 
-          <div className="kanban-board">
+          <div className="kanban-board-wrap">
+          {/* Left-edge tab to reveal the Feature Pool (also opens it while dragging a card) */}
+          {!isPoolInView && mobileColFilter === 'all' && (
+            <button
+              type="button"
+              className="pool-reveal-tab"
+              onClick={() => scrollBoardTo('backlog')}
+              onDragEnter={() => scrollBoardTo('backlog')}
+              title="Show Feature Pool (features not started yet)"
+            >
+              <ChevronLeft size={14} />
+              <span className="pool-reveal-label">Feature Pool</span>
+              <span className="pool-reveal-count">{poolFeatures.length}</span>
+            </button>
+          )}
+
+          <div className="kanban-board with-pool" ref={boardRef} onScroll={handleBoardScroll}>
+            {/* FEATURE POOL (backlog): features added but not yet started */}
+            <div
+              data-col-id="backlog"
+              className={`kanban-col feature-pool-col ${dragOverColId === 'backlog' ? 'col-drag-over' : ''} ${
+                mobileColFilter !== 'all' && mobileColFilter !== 'backlog' ? 'mobile-hidden' : ''
+              }`}
+              onDragOver={(e) => handleColDragOver(e, 'backlog')}
+              onDragEnter={(e) => handleColDragEnter(e, 'backlog')}
+              onDragLeave={(e) => handleColDragLeave(e, 'backlog')}
+              onDrop={(e) => {
+                e.preventDefault();
+                const featId = e.dataTransfer.getData('text/plain') || draggedFeatId;
+                cleanupDragState();
+                const dropped = (projectFeatures || []).find((f) => f.id === featId);
+                if (dropped && dropped.status !== 'backlog' && moveFeatureCard) {
+                  moveFeatureCard(featId, 'backlog');
+                }
+              }}
+            >
+              <div
+                className="kanban-col-header"
+                style={{
+                  padding: '0.65rem 0.85rem',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexShrink: 0
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <Inbox size={14} color="var(--text-muted)" />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 700 }}>Feature Pool</span>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontFamily: 'var(--font-mono)',
+                      background: 'var(--bg-surface)',
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-full)',
+                      color: 'var(--text-muted)'
+                    }}
+                  >
+                    {poolFeatures.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={addFeatureForCurrentModule}
+                    title={isAllModules ? 'Add feature to pool' : `Add feature to ${selectedModuleFilter} pool`}
+                    style={{ width: '24px', height: '24px', color: 'var(--accent-dev)' }}
+                  >
+                    <Plus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => scrollBoardTo('in_dev')}
+                    title="Back to board"
+                    style={{ width: '24px', height: '24px', color: 'var(--text-muted)' }}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Pool toolbar: search + bulk start */}
+              <div
+                style={{
+                  padding: '0.5rem 0.6rem',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem',
+                  flexShrink: 0
+                }}
+              >
+                <div style={{ position: 'relative' }}>
+                  <Search
+                    size={12}
+                    style={{
+                      position: 'absolute',
+                      left: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-muted)',
+                      pointerEvents: 'none'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={poolSearch}
+                    onChange={(e) => setPoolSearch(e.target.value)}
+                    placeholder="Search pool…"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.3rem 1.6rem' }}
+                  />
+                  {poolSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setPoolSearch('')}
+                      title="Clear search"
+                      style={{
+                        position: 'absolute',
+                        right: '6px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        color: 'var(--text-muted)',
+                        display: 'flex'
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                {filteredPoolFeatures.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        fontSize: '0.72rem',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <input type="checkbox" checked={allPoolSelected} onChange={toggleSelectAllPool} />
+                      <span>Select all</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={selectedPoolIds.length === 0}
+                      onClick={handleStartSelected}
+                      title="Move the selected features into In Development"
+                      style={{
+                        fontSize: '0.7rem',
+                        padding: '0.25rem 0.55rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        opacity: selectedPoolIds.length === 0 ? 0.5 : 1
+                      }}
+                    >
+                      <Play size={11} />
+                      <span>Start Dev{selectedPoolIds.length > 0 ? ` (${selectedPoolIds.length})` : ''}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="kanban-cards-wrap" style={{ gap: '0.35rem' }}>
+                {filteredPoolFeatures.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '1.5rem 0.75rem',
+                      textAlign: 'center',
+                      color: dragOverColId === 'backlog' ? 'var(--accent-dev)' : 'var(--text-muted)',
+                      fontSize: '0.78rem',
+                      lineHeight: 1.45
+                    }}
+                  >
+                    {dragOverColId === 'backlog'
+                      ? 'Drop to move back to the pool'
+                      : poolQuery
+                      ? 'No pooled features match your search.'
+                      : 'Pool is empty. Add features here, then pull them into development.'}
+                  </div>
+                ) : (
+                  filteredPoolFeatures.map((feat) => {
+                    const isChecked = poolSelectedIds.has(feat.id);
+                    return (
+                      <div
+                        key={feat.id}
+                        className={`ticket-card ${draggedFeatId === feat.id ? 'is-dragging' : ''}`}
+                        draggable={true}
+                        onDragStart={(e) => handleDragStart(e, feat.id)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => {
+                          if (!wasDraggingRef.current) openFeature(feat);
+                        }}
+                        title="Drag into In Development, or click to view details"
+                        style={{
+                          padding: '0.45rem 0.55rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          cursor: 'grab',
+                          borderStyle: 'dashed',
+                          borderColor: isChecked ? 'var(--accent-dev)' : undefined
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => togglePoolSelect(feat.id)}
+                          title="Select for bulk start"
+                        />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            <span
+                              style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                color: 'var(--accent-dev)'
+                              }}
+                            >
+                              {feat.code || feat.id}
+                            </span>
+                            {isAllModules && feat.moduleName && (
+                              <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>📁 {feat.moduleName}</span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={feat.name}
+                          >
+                            {feat.name}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateFeatureStatus(feat.id, 'in_dev');
+                          }}
+                          title="Start development"
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            flexShrink: 0,
+                            color: 'var(--accent-dev)',
+                            background: 'rgba(56, 189, 248, 0.1)',
+                            border: '1px solid var(--accent-dev-border)'
+                          }}
+                        >
+                          <Play size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditFeatureModal(feat);
+                          }}
+                          title="Edit Feature"
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            flexShrink: 0,
+                            color: 'var(--text-muted)',
+                            background: 'transparent',
+                            border: 'none'
+                          }}
+                        >
+                          <Edit2 size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete feature "${feat.name}" from the pool?`)) {
+                              deleteFeature(feat.id);
+                            }
+                          }}
+                          title="Delete Feature"
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            flexShrink: 0,
+                            color: 'var(--text-muted)',
+                            background: 'transparent',
+                            border: 'none'
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
             {FEATURE_COLUMNS.map((col) => {
-              // Features ONLY go to the board columns!
-              const colFeatures = visibleFeatures.filter((f) => f.status === col.id);
+              // Only features in the development lifecycle go to the board columns
+              const colFeatures = boardFeatures.filter((f) => f.status === col.id);
               const isOverCol = dragOverColId === col.id;
               const isHiddenOnMobile = mobileColFilter !== 'all' && mobileColFilter !== col.id;
 
               return (
                 <div
                   key={col.id}
+                  data-col-id={col.id}
                   className={`kanban-col ${isOverCol ? 'col-drag-over' : ''} ${isHiddenOnMobile ? 'mobile-hidden' : ''}`}
                 onDragOver={(e) => handleColDragOver(e, col.id)}
                 onDragEnter={(e) => handleColDragEnter(e, col.id)}
@@ -872,12 +1159,37 @@ export default function FeatureBoard() {
                       const qa = team.find((m) => m.id === feat.assignedQa);
 
                       const bugs = feat.bugs || [];
-                      const openBugs = bugs.filter((b) => b.status !== 'verified');
-                      const criticalOpen = openBugs.filter((b) => b.severity === 'Critical');
                       const suggestions = feat.suggestions || [];
+                      const fixedBugs = bugs.filter((b) => isItemDone(b.status)).length;
+                      const doneSuggs = suggestions.filter((s) => isItemDone(s.status)).length;
+                      const openBugCount = bugs.length - fixedBugs;
+                      const hasCriticalOpen = bugs.some((b) => !isItemDone(b.status) && b.severity === 'Critical');
 
-                      const nextAction = getNextStatusAction(feat.status, openBugs.length);
-                      const NextIcon = nextAction ? nextAction.icon : null;
+                      const openFutureItems = (feat.futureItems || []).filter((i) => i.status !== 'done').length;
+                      const totalItems = bugs.length + suggestions.length;
+                      const doneItems = fixedBugs + doneSuggs;
+                      const isVerified = feat.status === 'verified';
+                      const progressPct = isVerified
+                        ? 100
+                        : totalItems > 0
+                        ? Math.round((doneItems / totalItems) * 100)
+                        : 0;
+                      const progressTone = isVerified || (totalItems > 0 && doneItems === totalItems)
+                        ? 'done'
+                        : hasCriticalOpen
+                        ? 'critical'
+                        : openBugCount > 0
+                        ? 'warn'
+                        : 'normal';
+                      const progressLabel = isVerified
+                        ? 'QA passed'
+                        : totalItems === 0
+                        ? feat.status === 'in_qa'
+                          ? 'Testing — no issues yet'
+                          : 'No issues logged'
+                        : `${doneItems}/${totalItems} resolved`;
+
+                      const nextAction = getNextStatusAction(feat.status, openBugCount);
                       const isDragging = draggedFeatId === feat.id;
 
                       const isCardTarget = dragOverTarget?.cardId === feat.id;
@@ -890,7 +1202,7 @@ export default function FeatureBoard() {
                       return (
                         <div
                           key={feat.id}
-                          className={`ticket-card ${isDragging ? 'is-dragging' : ''} ${dropPosClass}`}
+                          className={`ticket-card feat-card ${isDragging ? 'is-dragging' : ''} ${dropPosClass}`}
                           draggable={true}
                           onDragStart={(e) => handleDragStart(e, feat.id)}
                           onDragEnd={handleDragEnd}
@@ -901,177 +1213,43 @@ export default function FeatureBoard() {
                               openFeature(feat);
                             }
                           }}
-                          style={{
-                            padding: '0.75rem 0.85rem',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
-                            cursor: 'grab'
-                          }}
                           title="Drag to move or click to view details"
                         >
-                          {/* Module Badge & Code */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                              <span className="drag-grip-handle" title="Drag to move or reorder card">
-                                <GripVertical size={14} />
-                              </span>
+                          {/* Top row: code (+ module when viewing all) and hover actions */}
+                          <div className="feat-card-top">
+                            <span className="feat-card-code">{feat.code || feat.id}</span>
+                            {isAllModules && feat.moduleName && (
+                              <span className="feat-card-module">{feat.moduleName}</span>
+                            )}
 
-                              {/* In-phase reorder up/down buttons */}
+                            <div className="feat-card-actions" onClick={(e) => e.stopPropagation()}>
                               {colFeatures.length > 1 && (
-                                <div
-                                  style={{
-                                    display: 'inline-flex',
-                                    flexDirection: 'column',
-                                    gap: '1px'
-                                  }}
-                                  title="Change order within phase"
-                                >
+                                <>
                                   <button
                                     type="button"
                                     disabled={featIndex === 0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (reorderFeatureInPhase) {
-                                        reorderFeatureInPhase(feat.id, 'up');
-                                      }
-                                    }}
-                                    title={featIndex === 0 ? 'Top of column' : 'Move up in order'}
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      padding: 0,
-                                      lineHeight: 1,
-                                      cursor: featIndex === 0 ? 'not-allowed' : 'pointer',
-                                      opacity: featIndex === 0 ? 0.25 : 0.7,
-                                      color: 'var(--text-muted)',
-                                      display: 'flex',
-                                      alignItems: 'center'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (featIndex !== 0) e.currentTarget.style.color = 'var(--accent-dev)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.color = 'var(--text-muted)';
-                                    }}
+                                    onClick={() => reorderFeatureInPhase && reorderFeatureInPhase(feat.id, 'up')}
+                                    title="Move up"
                                   >
-                                    <ChevronUp size={11} />
+                                    <ChevronUp size={12} />
                                   </button>
                                   <button
                                     type="button"
                                     disabled={featIndex === colFeatures.length - 1}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (reorderFeatureInPhase) {
-                                        reorderFeatureInPhase(feat.id, 'down');
-                                      }
-                                    }}
-                                    title={
-                                      featIndex === colFeatures.length - 1
-                                        ? 'Bottom of column'
-                                        : 'Move down in order'
-                                    }
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      padding: 0,
-                                      lineHeight: 1,
-                                      cursor:
-                                        featIndex === colFeatures.length - 1 ? 'not-allowed' : 'pointer',
-                                      opacity: featIndex === colFeatures.length - 1 ? 0.25 : 0.7,
-                                      color: 'var(--text-muted)',
-                                      display: 'flex',
-                                      alignItems: 'center'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (featIndex !== colFeatures.length - 1)
-                                        e.currentTarget.style.color = 'var(--accent-dev)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.color = 'var(--text-muted)';
-                                    }}
+                                    onClick={() => reorderFeatureInPhase && reorderFeatureInPhase(feat.id, 'down')}
+                                    title="Move down"
                                   >
-                                    <ChevronDown size={11} />
+                                    <ChevronDown size={12} />
                                   </button>
-                                </div>
+                                </>
                               )}
-
-                              <span
-                                style={{
-                                  fontFamily: 'var(--font-mono)',
-                                  fontSize: '0.74rem',
-                                  fontWeight: 700,
-                                  color: 'var(--accent-dev)'
-                                }}
-                              >
-                                {feat.code || feat.id}
-                              </span>
-
-                              {/* Module Badge */}
-                              {feat.moduleName && (
-                                <span
-                                  style={{
-                                    fontSize: '0.68rem',
-                                    padding: '1px 6px',
-                                    borderRadius: '4px',
-                                    background: 'rgba(56, 189, 248, 0.1)',
-                                    color: 'var(--accent-dev)',
-                                    border: '1px solid rgba(56, 189, 248, 0.25)',
-                                    fontWeight: 600,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.2rem'
-                                  }}
-                                >
-                                  📁 {feat.moduleName}
-                                </span>
-                              )}
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              {/* Release Pill */}
-                              {feat.targetRelease && (
-                                <span
-                                  style={{
-                                    fontSize: '0.68rem',
-                                    color: 'var(--text-muted)',
-                                    fontFamily: 'var(--font-mono)'
-                                  }}
-                                >
-                                  {feat.targetRelease}
-                                </span>
-                              )}
-
-                              {/* Edit Feature Button */}
-                              <button
-                                type="button"
-                                className="btn-icon"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditFeatureModal(feat);
-                                }}
-                                title="Edit Feature"
-                                style={{
-                                  width: '20px',
-                                  height: '20px',
-                                  padding: '2px',
-                                  color: 'var(--text-muted)',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  borderRadius: '4px'
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-dev)')}
-                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-                              >
+                              <button type="button" onClick={() => openEditFeatureModal(feat)} title="Edit Feature">
                                 <Edit2 size={11} />
                               </button>
-
-                              {/* Delete Feature Button */}
                               <button
                                 type="button"
-                                className="btn-icon"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                className="danger"
+                                onClick={() => {
                                   if (
                                     window.confirm(
                                       `Delete feature "${feat.name}"? This will permanently remove all associated bugs and suggestions.`
@@ -1081,177 +1259,82 @@ export default function FeatureBoard() {
                                   }
                                 }}
                                 title="Delete Feature"
-                                style={{
-                                  width: '20px',
-                                  height: '20px',
-                                  padding: '2px',
-                                  color: 'var(--text-muted)',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  borderRadius: '4px'
-                                }}
-                                onMouseEnter={(e) =>
-                                  (e.currentTarget.style.color = 'var(--status-critical)')
-                                }
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.color = 'var(--text-muted)')
-                                }
                               >
                                 <Trash2 size={11} />
                               </button>
                             </div>
                           </div>
 
-                          {/* Feature Name */}
-                          <div
-                            style={{
-                              fontSize: '0.92rem',
-                              fontWeight: 700,
-                              lineHeight: 1.35,
-                              color: 'var(--text-primary)'
-                            }}
-                          >
-                            {feat.name}
+                          {/* Title */}
+                          <div className="feat-card-title">{feat.name}</div>
+
+                          {/* Progress */}
+                          <div className="feat-card-progress">
+                            <div className="feat-card-bar">
+                              <div
+                                className={`feat-card-bar-fill tone-${progressTone}`}
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
+                            <span className={`feat-card-progress-label tone-${progressTone}`}>
+                              {isVerified && <CheckCircle2 size={11} />}
+                              {progressLabel}
+                            </span>
                           </div>
 
-                          {/* Description Snippet */}
-                          {feat.description && (
-                            <p
-                              style={{
-                                fontSize: '0.78rem',
-                                color: 'var(--text-secondary)',
-                                margin: 0,
-                                lineHeight: 1.4,
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden'
-                              }}
+                          {/* Footer: counts, people, next step */}
+                          <div className="feat-card-footer">
+                            <span
+                              className={`feat-card-stat ${openBugCount > 0 ? (hasCriticalOpen ? 'tone-critical' : 'tone-warn') : ''}`}
+                              title={`Bugs: ${fixedBugs} fixed of ${bugs.length}${hasCriticalOpen ? ' (critical open)' : ''}`}
                             >
-                              {feat.description}
-                            </p>
-                          )}
+                              <Bug size={12} />
+                              {fixedBugs}/{bugs.length}
+                            </span>
+                            <span
+                              className="feat-card-stat"
+                              title={`Suggestions: ${doneSuggs} done of ${suggestions.length}`}
+                            >
+                              <Lightbulb size={12} />
+                              {doneSuggs}/{suggestions.length}
+                            </span>
+                            {openFutureItems > 0 && (
+                              <span
+                                className="feat-card-stat tone-warn"
+                                title={`${openFutureItems} future item(s) pending — see Release Gate`}
+                              >
+                                <Hourglass size={12} />
+                                {openFutureItems}
+                              </span>
+                            )}
 
-                          {/* Bottom Row: Bugs / Suggestions & Next Action */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              paddingTop: '0.45rem',
-                              borderTop: '1px solid var(--border-subtle)',
-                              marginTop: '0.2rem'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                              {/* Open Bugs */}
-                              {openBugs.length > 0 ? (
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700,
-                                    color: criticalOpen.length > 0 ? 'var(--status-critical)' : '#f59e0b',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}
-                                  title={`${openBugs.length} open bugs (${criticalOpen.length} critical)`}
-                                >
-                                  <Bug size={13} />
-                                  <span>{openBugs.length}</span>
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    color: 'var(--status-verified)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}
-                                  title="No open defects"
-                                >
-                                  <CheckCircle2 size={13} />
-                                </span>
-                              )}
-
-                              {/* Suggestions */}
-                              {suggestions.length > 0 && (
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    color: 'var(--status-suggested)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.2rem'
-                                  }}
-                                  title={`${suggestions.length} suggestions`}
-                                >
-                                  <Lightbulb size={13} />
-                                  <span>{suggestions.length}</span>
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Dev & QA Avatars */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <div className="feat-card-people">
                               {dev && (
-                                <span
-                                  className="user-avatar-small"
-                                  style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    fontSize: '0.65rem',
-                                    background: dev.color
-                                  }}
-                                  title={`Dev: ${dev.name}`}
-                                >
+                                <span className="user-avatar-small" style={{ background: dev.color }} title={`Dev: ${dev.name}`}>
                                   {dev.initials}
                                 </span>
                               )}
-                              {qa && (
-                                <span
-                                  className="user-avatar-small"
-                                  style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    fontSize: '0.65rem',
-                                    background: qa.color
-                                  }}
-                                  title={`QA: ${qa.name}`}
-                                >
+                              {qa && qa.id !== dev?.id && (
+                                <span className="user-avatar-small" style={{ background: qa.color }} title={`QA: ${qa.name}`}>
                                   {qa.initials}
                                 </span>
                               )}
-
-                              {/* Quick Move Action */}
-                              {nextAction && (
-                                <button
-                                  type="button"
-                                  style={{
-                                    marginLeft: '0.3rem',
-                                    padding: '2px 7px',
-                                    fontSize: '0.7rem',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border-medium)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text-secondary)',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateFeatureStatus(feat.id, nextAction.next);
-                                  }}
-                                  title={`Move to ${nextAction.label}`}
-                                >
-                                  {NextIcon && <NextIcon size={11} />}
-                                  <span>{nextAction.label}</span>
-                                </button>
-                              )}
                             </div>
+
+                            {nextAction && (
+                              <button
+                                type="button"
+                                className="feat-card-next"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateFeatureStatus(feat.id, nextAction.next);
+                                }}
+                                title={nextAction.label}
+                              >
+                                <span>{nextAction.label}</span>
+                                <ArrowRight size={11} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1261,6 +1344,7 @@ export default function FeatureBoard() {
               </div>
             );
           })}
+          </div>
           </div>
         </>
       )}

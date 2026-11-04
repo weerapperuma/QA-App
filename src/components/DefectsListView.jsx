@@ -12,6 +12,7 @@ import {
   X,
   Check,
   Trash2,
+  Hourglass,
   Edit2,
   Code2,
   ChevronDown,
@@ -34,6 +35,7 @@ export default function DefectsListView() {
     updateSuggestionStatus,
     updateFeatureSuggestion,
     convertDefectType,
+    openMoveToFuture,
     addBugToFeature,
     addSuggestionToFeature,
     deleteBugFromFeature,
@@ -950,6 +952,23 @@ export default function DefectsListView() {
                           style={{
                             width: '26px',
                             height: '26px',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            background: 'rgba(245, 158, 11, 0.08)'
+                          }}
+                          onClick={() =>
+                            openMoveToFuture(item.featureId, item.type === 'suggestion' ? 'suggestion' : 'bug', item.id)
+                          }
+                          title="Move to Future Improvements"
+                        >
+                          <Hourglass size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            width: '26px',
+                            height: '26px',
                             color: 'var(--status-critical)',
                             border: '1px solid var(--status-critical-border)',
                             background: 'var(--status-critical-bg)'
@@ -1447,6 +1466,21 @@ export default function DefectsListView() {
                 >
                   <Edit2 size={13} />
                   <span>Edit</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.82rem', color: '#f59e0b' }}
+                  onClick={() => {
+                    const item = viewItem;
+                    setViewItem(null);
+                    openMoveToFuture(item.featureId, item.type === 'suggestion' ? 'suggestion' : 'bug', item.id);
+                  }}
+                  title="Move to Future Improvements"
+                >
+                  <Hourglass size={13} />
+                  <span>Move to Future</span>
                 </button>
 
                 <button

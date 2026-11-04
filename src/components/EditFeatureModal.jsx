@@ -295,6 +295,7 @@ export default function EditFeatureModal() {
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                 >
+                  <option value="backlog">0. Feature Pool (Not Started)</option>
                   <option value="in_dev">1. In Development</option>
                   <option value="ready_for_qa">2. Ready for Retest (Staging)</option>
                   <option value="in_qa">3. QA Verification</option>

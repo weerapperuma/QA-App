@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { FeatureFutureItemsSection, FutureItemForm } from './FutureImprovements';
 import {
   X,
   Layers,
@@ -20,6 +21,7 @@ import {
   FolderPlus,
   ChevronRight,
   Trash2,
+  Hourglass,
   Edit2
 } from 'lucide-react';
 
@@ -44,8 +46,13 @@ export default function FeatureDetailModal() {
     deleteFeature,
     team,
     updateDefectsFilter,
-    setActiveTab
+    setActiveTab,
+    addFutureItem,
+    openMoveToFuture
   } = useApp();
+
+  // "Close with pending item" (e.g. waiting on an API) inline form
+  const [showCloseWithPending, setShowCloseWithPending] = useState(false);
 
   // Inline Bug form state
   const [showAddBugForm, setShowAddBugForm] = useState(false);
@@ -316,6 +323,20 @@ export default function FeatureDetailModal() {
                 <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
                   <strong>Developer Notes: </strong>
                   {selectedFeature.devNotes}
+                </div>
+              )}
+
+              {/* Feature Pool: pull into development */}
+              {selectedFeature.status === 'backlog' && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
+                    onClick={() => updateFeatureStatus(selectedFeature.id, 'in_dev')}
+                  >
+                    <Sparkles size={13} />
+                    <span>Start Development</span>
+                  </button>
                 </div>
               )}
 
@@ -704,6 +725,23 @@ export default function FeatureDetailModal() {
                                 padding: '3px',
                                 width: '24px',
                                 height: '24px',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                background: 'rgba(245, 158, 11, 0.08)'
+                              }}
+                              onClick={() => openMoveToFuture(selectedFeature.id, 'bug', bug.id)}
+                              title="Move to Future Improvements"
+                            >
+                              <Hourglass size={12} />
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              style={{
+                                padding: '3px',
+                                width: '24px',
+                                height: '24px',
                                 color: 'var(--status-critical)',
                                 border: '1px solid var(--status-critical-border)',
                                 background: 'var(--status-critical-bg)'
@@ -935,6 +973,23 @@ export default function FeatureDetailModal() {
                             padding: '3px',
                             width: '24px',
                             height: '24px',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            background: 'rgba(245, 158, 11, 0.08)'
+                          }}
+                          onClick={() => openMoveToFuture(selectedFeature.id, 'suggestion', sugg.id)}
+                          title="Move to Future Improvements"
+                        >
+                          <Hourglass size={12} />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{
+                            padding: '3px',
+                            width: '24px',
+                            height: '24px',
                             color: 'var(--status-critical)',
                             border: '1px solid var(--status-critical-border)',
                             background: 'var(--status-critical-bg)'
@@ -954,6 +1009,9 @@ export default function FeatureDetailModal() {
                 </div>
               )}
             </div>
+
+            {/* SECTION 3: FUTURE IMPROVEMENTS (pending dependencies, suggestions, reminders) */}
+            <FeatureFutureItemsSection feature={selectedFeature} />
           </div>
 
           {/* Right Sidebar: Quality Gate & Sign-off */}
@@ -1065,6 +1123,37 @@ export default function FeatureDetailModal() {
                   </div>
                 )}
 
+                {/* Close now, track the unfinished part (e.g. API not ready) as a future item */}
+                {selectedFeature.status !== 'verified' && canVerifyFeature && (
+                  <div style={{ marginTop: '0.6rem' }}>
+                    {!showCloseWithPending ? (
+                      <button
+                        type="button"
+                        className="fb-btn"
+                        style={{ width: '100%', justifyContent: 'center' }}
+                        onClick={() => setShowCloseWithPending(true)}
+                        title="All QA passed, but something is still waiting (e.g. an API). Close now and track it."
+                      >
+                        <span>Close with Pending Item…</span>
+                      </button>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 0.4rem', lineHeight: 1.35 }}>
+                          Closes the feature now. The pending part goes to Future Improvements in the Release Gate.
+                        </div>
+                        <FutureItemForm
+                          submitLabel="Close Feature & Save"
+                          onCancel={() => setShowCloseWithPending(false)}
+                          onSubmit={async (data) => {
+                            await addFutureItem(selectedFeature.id, data, { closeFeature: true });
+                            setShowCloseWithPending(false);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {!canVerifyFeature && (
                   <div
                     style={{
@@ -1107,6 +1196,7 @@ export default function FeatureDetailModal() {
                 value={selectedFeature.status}
                 onChange={(e) => updateFeatureStatus(selectedFeature.id, e.target.value)}
               >
+                <option value="backlog">0. Feature Pool (Not Started)</option>
                 <option value="in_dev">1. In Development</option>
                 <option value="ready_for_qa">2. Ready for Retest (Staging)</option>
                 <option value="in_qa">3. QA Verification & Feedback</option>

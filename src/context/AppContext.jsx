@@ -62,10 +62,24 @@ const STORAGE_KEYS = {
   SUITES: 'devbridge_suites_v3',
   ENVS: 'devbridge_envs_v3',
   RELEASES: 'devbridge_releases_v3',
-  THEME: 'devbridge_theme'
+  THEME: 'devbridge_theme',
+  FEATURE_MODULE_FILTER: 'devbridge_feature_module_filter'
 };
 
 // Helper to deduplicate features, bugs, and suggestions
+// When a reopened feature is verified again, its in-progress future items are complete
+const completeInProgressFutureItems = (feat, newStatus) => {
+  if (newStatus !== 'verified' || !(feat.futureItems || []).some((i) => i.status === 'in_progress')) {
+    return {};
+  }
+  const now = new Date().toISOString();
+  return {
+    futureItems: feat.futureItems.map((i) =>
+      i.status === 'in_progress' ? { ...i, status: 'done', doneAt: now, updatedAt: now } : i
+    )
+  };
+};
+
 const sanitizeFeatures = (featList) => {
   if (!Array.isArray(featList)) return [];
   const featMap = new Map();
@@ -187,8 +201,7 @@ export function AppProvider({ children }) {
     });
   };
 
-  // Persistent Feature Board module & view filters for current session
-  const [featureBoardModuleFilter, setFeatureBoardModuleFilter] = useState('all');
+  // Feature Board view mode for current session
   const [featureBoardViewMode, setFeatureBoardViewMode] = useState('kanban');
 
   // Projects State
@@ -205,12 +218,35 @@ export function AppProvider({ children }) {
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_PROJECT) || INITIAL_PROJECTS[0]?.id || 'proj-default';
   });
 
+  // Feature Board module filter, remembered per project.
+  // null = nothing chosen yet → the board falls back to the first module (not "all").
+  const readModuleFilter = (projId) => {
+    try {
+      return localStorage.getItem(`${STORAGE_KEYS.FEATURE_MODULE_FILTER}_${projId}`) || null;
+    } catch {
+      return null;
+    }
+  };
+  const [featureBoardModuleFilter, setFeatureBoardModuleFilterState] = useState(() =>
+    readModuleFilter(activeProjectId)
+  );
+  const setFeatureBoardModuleFilter = (value) => {
+    setFeatureBoardModuleFilterState(value);
+    try {
+      const key = `${STORAGE_KEYS.FEATURE_MODULE_FILTER}_${activeProjectId}`;
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   // Reset filters when switching to a DIFFERENT project
   const prevActiveProjectIdRef = useRef(activeProjectId);
   useEffect(() => {
     if (prevActiveProjectIdRef.current && prevActiveProjectIdRef.current !== activeProjectId) {
       resetDefectsFilters();
-      setFeatureBoardModuleFilter('all');
+      setFeatureBoardModuleFilterState(readModuleFilter(activeProjectId));
     }
     prevActiveProjectIdRef.current = activeProjectId;
   }, [activeProjectId]);
@@ -743,6 +779,18 @@ export function AppProvider({ children }) {
     return 0;
   });
 
+  // All future improvement items across the active project's features
+  const projectFutureItems = projectFeatures.flatMap((f) =>
+    (f.futureItems || []).map((item) => ({
+      ...item,
+      featureId: f.id,
+      featureCode: f.code,
+      featureName: f.name,
+      featureStatus: f.status,
+      moduleName: f.moduleName || 'General'
+    }))
+  );
+
   // Modules belonging to this active project
   const projectModules = (modules || []).filter(
     (m) => m.projectId === (activeProject?.id || 'proj-erp')
@@ -998,7 +1046,7 @@ export function AppProvider({ children }) {
     setIsCreateFeatureModalOpen(true);
   };
 
-  const createFeature = async (featData) => {
+  const createFeature = async (featData, options = {}) => {
     const defaultDev = (team.find((m) => m.role === 'developer') || team[0])?.id || 'user-admin';
     const defaultQa = (team.find((m) => m.role === 'qa') || team[0])?.id || 'user-admin';
     const moduleName = (featData.moduleName || 'General').trim();
@@ -1033,7 +1081,8 @@ export function AppProvider({ children }) {
       candidateCode = `${activeProject.code}-${cleanCode}`;
       codeCounter++;
     }
-    const targetStatus = featData.status || 'in_dev';
+    // New features land in the Feature Pool (backlog) until pulled into development
+    const targetStatus = featData.status || 'backlog';
     const colFeatures = projectFeatures.filter((f) => f.status === targetStatus);
     const maxOrder = colFeatures.reduce((max, f) => Math.max(max, f.order || 0), 0);
     const newFeature = {
@@ -1053,7 +1102,7 @@ export function AppProvider({ children }) {
       stagingBuild: '',
       environment: 'staging',
       targetRelease: featData.targetRelease || 'v1.0.0',
-      devNotes: featData.devNotes || 'Started development of feature logic.',
+      devNotes: featData.devNotes || '',
       qaNotes: '',
       bugs: [],
       suggestions: [],
@@ -1062,24 +1111,35 @@ export function AppProvider({ children }) {
     };
 
     setFeatures((prev) => [newFeature, ...prev]);
-    setIsCreateFeatureModalOpen(false);
-    setCreateFeatureModalProps(null);
+    if (!options.keepOpen) {
+      setIsCreateFeatureModalOpen(false);
+      setCreateFeatureModalProps(null);
+    }
 
     if (firebaseStatus === 'connected') {
       await saveFeatureToFirestore(newFeature);
     }
 
-    addToast(`Feature "${newFeature.name}" created under ${newFeature.moduleName}!`, 'success', 'Feature Created');
+    const isPooled = newFeature.status === 'backlog';
+    addToast(
+      isPooled
+        ? `Feature "${newFeature.name}" added to the ${newFeature.moduleName} feature pool.`
+        : `Feature "${newFeature.name}" created under ${newFeature.moduleName}!`,
+      'success',
+      'Feature Created'
+    );
     addNotification({
       type: 'feature_created',
       title: `New Feature: "${newFeature.name}"`,
-      message: `${currentUser?.name || 'Developer'} created feature "${newFeature.name}" in module "${newFeature.moduleName}". Ready for QA test scoping.`,
+      message: `${currentUser?.name || 'Developer'} created feature "${newFeature.name}" in module "${newFeature.moduleName}". ${isPooled ? 'Added to the feature pool (not started yet).' : 'Ready for QA test scoping.'}`,
       targetRole: 'qa',
       targetFeatureId: newFeature.id,
       targetFeatureName: newFeature.name,
       severity: 'info'
     });
-    openFeature(newFeature.id);
+    if (!isPooled && !options.keepOpen) {
+      openFeature(newFeature.id);
+    }
     return newFeature;
   };
 
@@ -1217,6 +1277,19 @@ export function AppProvider({ children }) {
         targetFeatureName: feat.name,
         severity: 'success'
       });
+    } else if (newStatus === 'in_dev' && feat.status === 'backlog') {
+      addToast(`🛠️ Feature "${feat.name}" pulled into development.`, 'info', 'Development Started');
+      addNotification({
+        type: 'feature_started',
+        title: `Development Started: "${feat.name}"`,
+        message: `${currentUser?.name || 'A team member'} pulled "${feat.name}" from the feature pool into development.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'info'
+      });
+    } else if (newStatus === 'backlog') {
+      addToast(`Feature "${feat.name}" moved back to the feature pool.`, 'info', 'Moved to Pool');
     } else if (newStatus === 'blocked') {
       addNotification({
         type: 'feature_blocked',
@@ -1235,6 +1308,7 @@ export function AppProvider({ children }) {
     const updatedFeature = {
       ...feat,
       status: newStatus,
+      ...completeInProgressFutureItems(feat, newStatus),
       ...(metadata.prLink ? { prLink: metadata.prLink } : {}),
       ...(metadata.stagingBuild ? { stagingBuild: metadata.stagingBuild } : {}),
       ...(metadata.devNotes ? { devNotes: metadata.devNotes } : {}),
@@ -1317,6 +1391,7 @@ export function AppProvider({ children }) {
     const updatedItem = {
       ...feat,
       status: targetStatus,
+      ...completeInProgressFutureItems(feat, targetStatus),
       updatedAt: new Date().toISOString()
     };
 
@@ -1358,7 +1433,7 @@ export function AppProvider({ children }) {
 
       // 5. Combine and normalize order values across the project
       const allThisProj = [...otherColsFeatures, ...newColOrder];
-      const COL_KEYS = ['in_dev', 'ready_for_qa', 'in_qa', 'verified'];
+      const COL_KEYS = ['backlog', 'in_dev', 'ready_for_qa', 'in_qa', 'verified'];
       let finalThisProj = [];
       let baseOrder = 1000;
 
@@ -1421,6 +1496,46 @@ export function AppProvider({ children }) {
       swapTargetFeat.id,
       direction === 'up' ? 'before' : 'after'
     );
+  };
+
+  // Pull one or more pooled (backlog) features into development in a single batch
+  const startFeaturesDevelopment = async (featureIds = []) => {
+    const idSet = new Set(featureIds);
+    const targets = (features || []).filter((f) => idSet.has(f.id) && f.status === 'backlog');
+    if (targets.length === 0) return;
+    if (targets.length === 1) {
+      await updateFeatureStatus(targets[0].id, 'in_dev');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const inDevMax = (features || [])
+      .filter((f) => f.projectId === targets[0].projectId && f.status === 'in_dev')
+      .reduce((max, f) => Math.max(max, f.order || 0), 0);
+    const updatedById = new Map(
+      targets.map((f, idx) => [
+        f.id,
+        { ...f, status: 'in_dev', order: inDevMax + (idx + 1) * 1000, updatedAt: now }
+      ])
+    );
+
+    setFeatures((prev) => prev.map((f) => updatedById.get(f.id) || f));
+
+    addToast(`🛠️ ${targets.length} features pulled into development.`, 'info', 'Development Started');
+    addNotification({
+      type: 'feature_started',
+      title: `Development Started: ${targets.length} features`,
+      message: `${currentUser?.name || 'A team member'} pulled ${targets.length} features from the feature pool into development: ${targets
+        .slice(0, 5)
+        .map((f) => `"${f.name}"`)
+        .join(', ')}${targets.length > 5 ? ', …' : ''}`,
+      targetRole: 'developer',
+      severity: 'info'
+    });
+
+    if (firebaseStatus === 'connected') {
+      await Promise.all(Array.from(updatedById.values()).map((f) => saveFeatureToFirestore(f)));
+    }
   };
 
   // Add Bug directly to Feature (filed by QA during testing)
@@ -1811,6 +1926,189 @@ export function AppProvider({ children }) {
   };
 
   // Delete Suggestion from Feature
+  // ===== Future Improvements (deferred work tracked on a feature) =====
+  // Item: { id, type: 'dependency'|'suggestion'|'reminder', title, details, blockedBy,
+  //         remindOn: 'YYYY-MM-DD'|'', status: 'waiting'|'ready'|'in_progress'|'done', ... }
+  const patchFeatureFutureItems = async (featureId, mutate, extra = {}) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat) return null;
+    const updatedFeature = {
+      ...feat,
+      ...extra,
+      futureItems: mutate(feat.futureItems || []),
+      updatedAt: new Date().toISOString()
+    };
+    setFeatures((prev) => prev.map((f) => (f.id === featureId ? updatedFeature : f)));
+    if (firebaseStatus === 'connected') {
+      await saveFeatureToFirestore(updatedFeature);
+    }
+    return updatedFeature;
+  };
+
+  const addFutureItem = async (featureId, itemData, options = {}) => {
+    const feat = features.find((f) => f.id === featureId);
+    if (!feat || !itemData?.title?.trim()) return;
+    const now = new Date().toISOString();
+    const newItem = {
+      id: `FI-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+      type: itemData.type || 'dependency',
+      title: itemData.title.trim(),
+      details: (itemData.details || '').trim(),
+      blockedBy: (itemData.blockedBy || '').trim(),
+      remindOn: itemData.remindOn || '',
+      status: 'waiting',
+      createdBy: currentUser?.id || '',
+      createdByName: currentUser?.name || '',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const closing = options.closeFeature && feat.status !== 'verified';
+    await patchFeatureFutureItems(featureId, (items) => [newItem, ...items], closing ? { status: 'verified' } : {});
+
+    if (closing) {
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      addToast(
+        `"${feat.name}" closed — "${newItem.title}" saved to Future Improvements.`,
+        'verified',
+        'Closed with Pending Item'
+      );
+      addNotification({
+        type: 'feature_verified',
+        title: `Feature Closed with Pending Item: "${feat.name}"`,
+        message: `${currentUser?.name || 'QA'} closed "${feat.name}" (all current QA passed). Pending: "${newItem.title}"${
+          newItem.blockedBy ? ` — waiting on ${newItem.blockedBy}` : ''
+        }.`,
+        targetRole: 'all',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'success'
+      });
+    } else {
+      addToast(`Saved "${newItem.title}" to Future Improvements.`, 'success', 'Future Item Added');
+    }
+  };
+
+  const updateFutureItem = async (featureId, itemId, patch) => {
+    const feat = features.find((f) => f.id === featureId);
+    const item = (feat?.futureItems || []).find((i) => i.id === itemId);
+    if (!feat || !item) return;
+    const now = new Date().toISOString();
+    await patchFeatureFutureItems(featureId, (items) =>
+      items.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              ...patch,
+              ...(patch.status === 'ready' ? { readyAt: now } : {}),
+              ...(patch.status === 'done' ? { doneAt: now } : {}),
+              updatedAt: now
+            }
+          : i
+      )
+    );
+
+    if (patch.status === 'ready' && item.status !== 'ready') {
+      addToast(`"${item.title}" is ready to implement.`, 'success', 'Ready to Implement');
+      addNotification({
+        type: 'future_item_ready',
+        title: `Ready to Implement: "${item.title}"`,
+        message: `${item.blockedBy ? `${item.blockedBy} is now available. ` : ''}"${item.title}" on feature "${feat.name}" can be implemented.`,
+        targetRole: 'developer',
+        targetFeatureId: feat.id,
+        targetFeatureName: feat.name,
+        severity: 'info'
+      });
+    } else if (patch.status === 'done' && item.status !== 'done') {
+      addToast(`"${item.title}" marked done.`, 'verified', 'Future Item Done');
+    }
+  };
+
+  // Reopen the feature into development to implement a deferred item
+  const startFutureItem = async (featureId, itemId) => {
+    const feat = features.find((f) => f.id === featureId);
+    const item = (feat?.futureItems || []).find((i) => i.id === itemId);
+    if (!feat || !item) return;
+    const now = new Date().toISOString();
+    await patchFeatureFutureItems(
+      featureId,
+      (items) => items.map((i) => (i.id === itemId ? { ...i, status: 'in_progress', startedAt: now, updatedAt: now } : i)),
+      {
+        status: 'in_dev',
+        devNotes: `Implementing deferred item: ${item.title}${feat.devNotes ? `\n${feat.devNotes}` : ''}`
+      }
+    );
+    addToast(`"${feat.name}" reopened in development for "${item.title}".`, 'info', 'Implementation Started');
+    addNotification({
+      type: 'feature_started',
+      title: `Feature Reopened: "${feat.name}"`,
+      message: `${currentUser?.name || 'A team member'} reopened "${feat.name}" to implement "${item.title}". It will need QA again.`,
+      targetRole: 'all',
+      targetFeatureId: feat.id,
+      targetFeatureName: feat.name,
+      severity: 'info'
+    });
+  };
+
+  // Move a defect or suggestion off the feature and into Future Improvements
+  const [moveToFutureTarget, setMoveToFutureTarget] = useState(null);
+  const openMoveToFuture = (featureId, kind, sourceId) => {
+    const feat = features.find((f) => f.id === featureId);
+    const list = kind === 'bug' ? feat?.bugs : feat?.suggestions;
+    const source = (list || []).find((x) => x.id === sourceId);
+    if (!feat || !source) return;
+    setMoveToFutureTarget({ featureId, featureName: feat.name, kind, source });
+  };
+
+  const moveDefectToFuture = async (featureId, kind, sourceId, itemData) => {
+    const feat = features.find((f) => f.id === featureId);
+    const listKey = kind === 'bug' ? 'bugs' : 'suggestions';
+    const source = (feat?.[listKey] || []).find((x) => x.id === sourceId);
+    if (!feat || !source || !itemData?.title?.trim()) return;
+    const now = new Date().toISOString();
+    const newItem = {
+      id: `FI-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+      type: itemData.type || (kind === 'bug' ? 'dependency' : 'suggestion'),
+      title: itemData.title.trim(),
+      details: (itemData.details || '').trim(),
+      blockedBy: (itemData.blockedBy || '').trim(),
+      remindOn: itemData.remindOn || '',
+      status: 'waiting',
+      sourceKind: kind,
+      sourceId: source.id,
+      sourceSeverity: kind === 'bug' ? source.severity || '' : source.priority || '',
+      createdBy: currentUser?.id || '',
+      createdByName: currentUser?.name || '',
+      createdAt: now,
+      updatedAt: now
+    };
+    await patchFeatureFutureItems(featureId, (items) => [newItem, ...items], {
+      [listKey]: (feat[listKey] || []).filter((x) => x.id !== sourceId)
+    });
+    setMoveToFutureTarget(null);
+    addToast(
+      `${kind === 'bug' ? 'Defect' : 'Suggestion'} [${source.id}] moved to Future Improvements.`,
+      'success',
+      'Moved to Future'
+    );
+    addNotification({
+      type: 'future_item_added',
+      title: `Deferred: "${newItem.title}"`,
+      message: `${currentUser?.name || 'A team member'} moved ${kind === 'bug' ? 'defect' : 'suggestion'} [${source.id}] on "${feat.name}" to Future Improvements${
+        newItem.blockedBy ? ` (waiting on ${newItem.blockedBy})` : ''
+      }.`,
+      targetRole: 'all',
+      targetFeatureId: feat.id,
+      targetFeatureName: feat.name,
+      severity: 'info'
+    });
+  };
+
+  const deleteFutureItem = async (featureId, itemId) => {
+    await patchFeatureFutureItems(featureId, (items) => items.filter((i) => i.id !== itemId));
+    addToast('Future item removed.', 'info');
+  };
+
   const deleteSuggestionFromFeature = async (featureId, suggId) => {
     const feat = features.find((f) => f.id === featureId);
     if (!feat) return;
@@ -2339,6 +2637,16 @@ export function AppProvider({ children }) {
         updateFeatureStatus,
         moveFeatureCard,
         reorderFeatureInPhase,
+        startFeaturesDevelopment,
+        projectFutureItems,
+        addFutureItem,
+        updateFutureItem,
+        startFutureItem,
+        deleteFutureItem,
+        moveToFutureTarget,
+        setMoveToFutureTarget,
+        openMoveToFuture,
+        moveDefectToFuture,
         addBugToFeature,
         updateFeatureBugStatus,
         updateFeatureBug,

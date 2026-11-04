@@ -33,6 +33,8 @@ export default function CreateFeatureModal() {
   const [targetRelease, setTargetRelease] = useState('v1.0.0');
   const [devNotes, setDevNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // New features go to the Feature Pool by default; tick to start development right away
+  const [startNow, setStartNow] = useState(false);
 
   const devs = team.filter((m) => m.role === 'developer');
   const qas = team.filter((m) => m.role === 'qa');
@@ -74,11 +76,14 @@ export default function CreateFeatureModal() {
     setDescription('');
     setIsCreatingNewModule(false);
     setNewModuleName('');
+    setStartNow(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
+    // "Add & Add Another" keeps the modal open for quickly filling the pool
+    const keepOpen = e.nativeEvent?.submitter?.dataset?.keepOpen === 'true';
 
     let finalModule = selectedModule;
     if (isCreatingNewModule) {
@@ -94,15 +99,21 @@ export default function CreateFeatureModal() {
       assignedDev: assignedDev || availableDevs[0]?.id || 'user-admin',
       assignedQa: assignedQa || availableQas[0]?.id || 'user-admin',
       targetRelease,
-      devNotes: devNotes || `Initial feature scoping for ${name.trim()}.`
-    });
+      devNotes: devNotes || `Initial feature scoping for ${name.trim()}.`,
+      status: startNow ? 'in_dev' : 'backlog'
+    }, { keepOpen });
     setSubmitting(false);
 
     setName('');
     setDescription('');
     setDevNotes('');
+    if (keepOpen && isCreatingNewModule) {
+      // module now exists; keep adding to it
+      setSelectedModule(finalModule);
+    }
     setIsCreatingNewModule(false);
     setNewModuleName('');
+    if (!keepOpen) setStartNow(false);
   };
 
   return (
@@ -357,9 +368,25 @@ export default function CreateFeatureModal() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
+              flexWrap: 'wrap',
               gap: '0.65rem'
             }}
           >
+            <label
+              style={{
+                marginRight: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.78rem',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer'
+              }}
+              title="Unticked: feature waits in the module's Feature Pool until development starts"
+            >
+              <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} />
+              <span>Start in development now</span>
+            </label>
             <button
               type="button"
               className="btn btn-secondary"
@@ -370,10 +397,19 @@ export default function CreateFeatureModal() {
             </button>
             <button
               type="submit"
+              data-keep-open="true"
+              className="btn btn-secondary"
+              disabled={!name.trim() || submitting}
+              title="Create and keep this form open to add more features"
+            >
+              Add &amp; Add Another
+            </button>
+            <button
+              type="submit"
               className="btn btn-primary"
               disabled={!name.trim() || submitting}
             >
-              {submitting ? 'Creating...' : 'Create Feature'}
+              {submitting ? 'Creating...' : startNow ? 'Create & Start Dev' : 'Add to Feature Pool'}
             </button>
           </div>
         </form>

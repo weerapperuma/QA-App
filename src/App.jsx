@@ -5,6 +5,7 @@ import FeatureBoard from './components/FeatureBoard';
 import DefectsListView from './components/DefectsListView';
 import ReleaseGate from './components/ReleaseGate';
 import FeatureDetailModal from './components/FeatureDetailModal';
+import { MoveToFutureModal } from './components/FutureImprovements';
 import TicketDetailModal from './components/TicketDetailModal';
 import CreateTicketModal from './components/CreateTicketModal';
 import CreateProjectModal from './components/CreateProjectModal';
@@ -41,6 +42,7 @@ function MainApp() {
 
       {/* Interactive Modals & Toasts */}
       <FeatureDetailModal />
+      <MoveToFutureModal />
       <TicketDetailModal />
       <CreateTicketModal />
       <CreateProjectModal />
