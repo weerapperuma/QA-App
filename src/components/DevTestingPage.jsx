@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ClipboardCheck, Check, Lock, Search, X, Info, ChevronDown, Undo2, GripVertical, FolderPlus, Plus } from 'lucide-react';
+import { Check, Lock, Search, X, Info, ChevronDown, Undo2, GripVertical } from 'lucide-react';
 import { DEV_TEST_STAGES, getDevTestProgress } from '../utils/devTesting';
 import { ROLES, hasRole } from '../utils/roles';
 
@@ -63,32 +63,20 @@ function StageCell({ feature, stage, index, progress, canEdit, onPass, onUndo })
   );
 }
 
-export default function DevTestingPage() {
+export default function DevTestingPage({ moduleName: activeModule = '' }) {
   const {
     projectFeatures = [],
-    allModuleNames = [],
     team = [],
     currentUser,
     setDevCheck,
     reorderDevTesting,
     openFeature,
-    featureBoardModuleFilter,
-    setIsCreateModuleModalOpen,
     openCreateFeatureModal
   } = useApp();
 
   const canEdit = hasRole(currentUser, ROLES.DEVELOPER);
   const me = currentUser?.id;
 
-  const modules = useMemo(
-    () =>
-      Array.from(new Set([...allModuleNames, ...projectFeatures.map((f) => (f.moduleName || 'General').trim())])).filter(Boolean),
-    [allModuleNames, projectFeatures]
-  );
-
-  const initialModule =
-    featureBoardModuleFilter && modules.find((m) => m.toLowerCase() === String(featureBoardModuleFilter).toLowerCase());
-  const [moduleName, setModuleName] = useState(initialModule || modules[0] || '');
   const [search, setSearch] = useState('');
   const [onlyMine, setOnlyMine] = useState(false);
   const [showPool, setShowPool] = useState(true);
@@ -98,7 +86,6 @@ export default function DevTestingPage() {
   const [progressFilter, setProgressFilter] = useState('all'); // all | not_started | in_progress | complete
   const [showGuide, setShowGuide] = useState(false);
 
-  const activeModule = modules.includes(moduleName) ? moduleName : modules[0] || '';
   const inModule = (f) => (f.moduleName || 'General').trim().toLowerCase() === activeModule.toLowerCase();
 
   // Working order: the order the team decided (drag & drop), otherwise creation order.
@@ -139,12 +126,6 @@ export default function DevTestingPage() {
 
   // Per-stage completion across the module (for the header)
   const stageCounts = DEV_TEST_STAGES.map((_, i) => moduleFeatures.filter((f) => getDevTestProgress(f).passed > i).length);
-
-  const moduleBadge = (m) => {
-    const list = projectFeatures.filter((f) => (f.moduleName || 'General').trim() === m && f.status !== 'backlog').map(getDevTestProgress);
-    const total = list.length * DEV_TEST_STAGES.length;
-    return total ? Math.round((list.reduce((s, p) => s + p.passed, 0) / total) * 100) : null;
-  };
 
   const pass = (feature, stage) => setDevCheck(feature.id, stage.id, true);
 
@@ -188,38 +169,6 @@ export default function DevTestingPage() {
 
   return (
     <div className="dt-page">
-      <div className="imp-head">
-        <div>
-          <h1 className="imp-title dt-title">
-            <ClipboardCheck size={20} /> Developer Testing
-          </h1>
-          <p className="fi-hint" style={{ margin: 0 }}>
-            The developer's own checklist for each feature, passed in order. Separate from the QA workflow.{' '}
-            {!canEdit && 'Only developers can mark stages; you can view progress.'}
-          </p>
-        </div>
-        <div className="imp-head-actions">
-          <button type="button" className="fb-btn" onClick={() => setShowGuide((v) => !v)}>
-            <Info size={14} />
-            <span>Stage guide</span>
-            <ChevronDown size={13} style={{ transform: showGuide ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-          </button>
-          <button type="button" className="fb-btn" onClick={() => setIsCreateModuleModalOpen(true)} title="Add or manage modules">
-            <FolderPlus size={14} />
-            <span>Module</span>
-          </button>
-          <button
-            type="button"
-            className="fb-btn fb-btn-primary"
-            onClick={() => openCreateFeatureModal(activeModule ? { defaultModuleName: activeModule } : undefined)}
-            title={activeModule ? `Add a feature to ${activeModule}` : 'Add a feature'}
-          >
-            <Plus size={14} />
-            <span>Feature</span>
-          </button>
-        </div>
-      </div>
-
       {showGuide && (
         <div className="dt-guide">
           {DEV_TEST_STAGES.map((s, i) => (
@@ -233,20 +182,6 @@ export default function DevTestingPage() {
           ))}
         </div>
       )}
-
-      {/* Module selector */}
-      <div className="fb-module-tabs dt-modules">
-        {modules.length === 0 && <span className="pf-note">No modules in this project yet.</span>}
-        {modules.map((m) => {
-          const pct = moduleBadge(m);
-          return (
-            <button key={m} type="button" className={`fb-tab ${m === activeModule ? 'active' : ''}`} onClick={() => setModuleName(m)}>
-              <span>{m}</span>
-              <span className="fb-tab-count">{pct === null ? '—' : `${pct}%`}</span>
-            </button>
-          );
-        })}
-      </div>
 
       {activeModule && (
         <div className="pf-card dt-card">
@@ -287,6 +222,16 @@ export default function DevTestingPage() {
                 <input type="checkbox" checked={showPool} onChange={(e) => setShowPool(e.target.checked)} />
                 <span>Include pool</span>
               </label>
+              <button
+                type="button"
+                className={`fb-btn dt-guide-btn ${showGuide ? 'on' : ''}`}
+                onClick={() => setShowGuide((v) => !v)}
+                title="What each stage means"
+              >
+                <Info size={13} />
+                <span>Stages</span>
+                <ChevronDown size={12} style={{ transform: showGuide ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
             </div>
           </div>
 

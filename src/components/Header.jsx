@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
+import { TESTING_TAB_IDS, LAST_TESTING_KEY, DEFAULT_TESTING_TAB } from '../utils/testingTabs';
 import {
   Layers,
   Sun,
   Moon,
   Building2,
-  Bug,
   ShieldCheck,
   ChevronDown,
   Check,
@@ -222,25 +222,22 @@ export default function Header() {
         </button>
 
         <button
-          className={`persona-btn ${!workspaceLocked && activeTab === 'devtesting' ? 'active-all' : ''}`}
-          onClick={() => setActiveTab('devtesting')}
+          className={`persona-btn ${!workspaceLocked && TESTING_TAB_IDS.includes(activeTab) ? 'active-all' : ''}`}
+          onClick={() => {
+            let last = DEFAULT_TESTING_TAB;
+            try {
+              last = localStorage.getItem(LAST_TESTING_KEY) || DEFAULT_TESTING_TAB;
+            } catch {
+              // ignore
+            }
+            setActiveTab(TESTING_TAB_IDS.includes(last) ? last : DEFAULT_TESTING_TAB);
+          }}
           disabled={workspaceLocked}
-          title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Developer testing checkpoints'}
+          title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Features, Dev Testing, Defects & Suggestions'}
           style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <ClipboardCheck size={14} color="var(--accent-dev)" />
-          <span>Dev Testing</span>
-        </button>
-
-        <button
-          className={`persona-btn ${!workspaceLocked && activeTab === 'board' ? 'active-all' : ''}`}
-          onClick={() => setActiveTab('board')}
-          disabled={workspaceLocked}
-          title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
-          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
-        >
-          <Bug size={14} color="var(--status-critical)" />
-          <span>Defects & Suggestions</span>
+          <span>Testing</span>
         </button>
 
         <button

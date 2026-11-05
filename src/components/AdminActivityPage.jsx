@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Activity,
@@ -62,6 +62,12 @@ export default function AdminActivityPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | online | active | deactivated
   const [sortBy, setSortBy] = useState('lastActive');
+  // Re-render every 30s so "x min ago" and Online status stay current
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setClock((c) => c + 1), 30 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // Per-user work progress across all projects
   const progressByUser = useMemo(() => {
@@ -277,7 +283,7 @@ export default function AdminActivityPage() {
             </select>
             <select className="form-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
               <option value="lastActive">Sort: last active</option>
-              <option value="lastLogin">Sort: last login</option>
+              <option value="lastLogin">Sort: last visit</option>
               <option value="activeTime">Sort: active time</option>
               <option value="name">Sort: name</option>
             </select>
@@ -290,7 +296,7 @@ export default function AdminActivityPage() {
               <tr>
                 <th>User</th>
                 <th>Status</th>
-                <th>Last login</th>
+                <th title="Last sign-in, or return after 30+ minutes away">Last visit</th>
                 <th>Last active</th>
                 <th>Active time</th>
                 <th>Progress</th>
@@ -345,7 +351,7 @@ export default function AdminActivityPage() {
                     </td>
                     <td title={formatDateTime(u.lastLoginAt)}>
                       <div>{timeAgo(u.lastLoginAt)}</div>
-                      <div className="um-sub">{u.loginCount || 0} logins</div>
+                      <div className="um-sub">{u.loginCount || 0} visits</div>
                     </td>
                     <td title={formatDateTime(u.lastActiveAt)}>{timeAgo(u.lastActiveAt)}</td>
                     <td>
@@ -416,10 +422,10 @@ export default function AdminActivityPage() {
       {/* Recent sign-ins */}
       <div className="pf-card">
         <div className="pf-card-title">
-          <LogIn size={15} /> Recent sign-ins
+          <LogIn size={15} /> Recent visits
         </div>
         {recentSessions.length === 0 ? (
-          <div className="fi-empty">No sign-ins recorded yet. Activity is tracked from the next login.</div>
+          <div className="fi-empty">No visits recorded yet. Activity is tracked from the next sign-in or app open.</div>
         ) : (
           <div className="ad-sessions">
             {recentSessions.map((s) => {
@@ -452,7 +458,7 @@ export default function AdminActivityPage() {
 
       <p className="pf-note" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
         <ShieldCheck size={12} />
-        Active time counts only while the app is open, visible and in use (idle after 5 minutes without input).
+        Active time counts only while the app is open, visible and in use (idle after 5 minutes without input), once per browser even with several tabs. Returning after 30+ minutes away starts a new visit.
       </p>
     </div>
   );

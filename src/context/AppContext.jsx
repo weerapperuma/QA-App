@@ -869,7 +869,9 @@ export function AppProvider({ children }) {
   // Session: { id, start, lastSeenAt, endedAt?, activeMs }
   const ACTIVITY_TICK_MS = 60 * 1000;          // heartbeat interval
   const IDLE_AFTER_MS = 5 * 60 * 1000;         // no input for 5 min = idle (time not counted)
+  const SESSION_GAP_MS = 30 * 60 * 1000;       // away 30+ min = the old session ended, a new visit starts
   const MAX_SESSIONS = 20;
+  const ACTIVITY_KEYS = ['lastLoginAt', 'lastActiveAt', 'loginCount', 'totalActiveMs', 'sessions'];
 
   const teamRawRef = useRef(teamRaw);
   teamRawRef.current = teamRaw;
@@ -877,10 +879,12 @@ export function AppProvider({ children }) {
   firebaseStatusRef.current = firebaseStatus;
 
   // Patch one user record without touching other fields; optionally persist to Firestore
-  const patchUserRecord = (userId, mutate, fallbackUser = null) => {
+  const patchUserRecord = (userId, mutate, fallbackUser = null, onlyKeys = null) => {
     const target = (teamRawRef.current || []).find((u) => u.id === userId) || fallbackUser;
     if (!target) return null;
-    const updated = { ...target, ...mutate(target) };
+    const changes = mutate(target);
+    if (!changes) return target;
+    const updated = { ...target, ...changes };
     setTeam((prev) => {
       if (!prev.some((u) => u.id === userId)) return [...prev, updated];
       const rest = prev.filter((u) => u.id !== userId);
@@ -889,10 +893,12 @@ export function AppProvider({ children }) {
       return rest;
     });
     if (firebaseStatusRef.current === 'connected') {
-      saveUserToFirestore(updated);
+      saveUserToFirestore(updated, onlyKeys);
     }
     return updated;
   };
+
+  const newSession = (iso) => ({ id: `ses-${Date.now().toString(36)}`, start: iso, lastSeenAt: iso, activeMs: 0 });
 
   const closeOpenSession = (sessions, iso) =>
     sessions.map((s, i) => (i === 0 && !s.endedAt ? { ...s, endedAt: s.lastSeenAt || iso } : s));
@@ -907,24 +913,54 @@ export function AppProvider({ children }) {
           lastLoginAt: iso,
           lastActiveAt: iso,
           loginCount: (u.loginCount || 0) + 1,
-          sessions: [
-            { id: `ses-${Date.now().toString(36)}`, start: iso, lastSeenAt: iso, activeMs: 0 },
-            ...prevSessions
-          ].slice(0, MAX_SESSIONS)
+          sessions: [newSession(iso), ...prevSessions].slice(0, MAX_SESSIONS)
         };
       },
-      user
+      user,
+      ACTIVITY_KEYS
+    );
+  };
+
+  // Called when the app opens / tab becomes visible while already signed in.
+  // If the last session went quiet 30+ min ago it is closed at its last-seen time and a new
+  // visit starts now (counted as the latest login), so times never span days.
+  const touchSession = (userId) => {
+    const nowMs = Date.now();
+    const iso = new Date(nowMs).toISOString();
+    patchUserRecordRef.current(
+      userId,
+      (u) => {
+        const sessions = Array.isArray(u.sessions) ? [...u.sessions] : [];
+        const cur = sessions[0];
+        const lastSeen = Date.parse(cur?.lastSeenAt || cur?.start || '') || 0;
+        const stillOpen = cur && !cur.endedAt && nowMs - lastSeen < SESSION_GAP_MS;
+        if (stillOpen) return { lastActiveAt: iso };
+        const closed = closeOpenSession(sessions, iso);
+        return {
+          lastLoginAt: iso,
+          lastActiveAt: iso,
+          loginCount: (u.loginCount || 0) + 1,
+          sessions: [newSession(iso), ...closed].slice(0, MAX_SESSIONS)
+        };
+      },
+      null,
+      ACTIVITY_KEYS
     );
   };
 
   const recordLogout = (userId) => {
     const iso = new Date().toISOString();
-    patchUserRecord(userId, (u) => ({
-      lastActiveAt: iso,
-      sessions: (Array.isArray(u.sessions) ? u.sessions : []).map((s, i) =>
-        i === 0 && !s.endedAt ? { ...s, lastSeenAt: iso, endedAt: iso } : s
-      )
-    }));
+    patchUserRecord(
+      userId,
+      (u) => ({
+        lastActiveAt: iso,
+        sessions: (Array.isArray(u.sessions) ? u.sessions : []).map((s, i) =>
+          i === 0 && !s.endedAt ? { ...s, lastSeenAt: iso, endedAt: iso } : s
+        )
+      }),
+      null,
+      ACTIVITY_KEYS
+    );
   };
 
   // Heartbeat: while the tab is visible and the user interacted recently, add active time
@@ -941,28 +977,65 @@ export function AppProvider({ children }) {
     events.forEach((ev) => window.addEventListener(ev, mark, { passive: true }));
     mark();
 
+    // Only one tab per browser counts time (others would double it)
+    const lockKey = `devbridge_activity_tick_${activeUserId}`;
+    const claimTick = (now) => {
+      try {
+        const last = Number(localStorage.getItem(lockKey) || 0);
+        if (now - last < ACTIVITY_TICK_MS * 0.8) return false;
+        localStorage.setItem(lockKey, String(now));
+      } catch {
+        // storage unavailable: count in this tab
+      }
+      return true;
+    };
+
+    // App opened / tab shown again while signed in → resume or start a visit
+    touchSession(activeUserId);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        mark();
+        touchSession(activeUserId);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     const timer = setInterval(() => {
       const now = Date.now();
       if (document.visibilityState !== 'visible' || now - lastInteractionRef.current > IDLE_AFTER_MS) return;
+      if (!claimTick(now)) return;
       const iso = new Date(now).toISOString();
-      patchUserRecordRef.current(activeUserId, (u) => {
-        const sessions = Array.isArray(u.sessions) ? [...u.sessions] : [];
-        if (sessions[0] && !sessions[0].endedAt) {
-          sessions[0] = { ...sessions[0], lastSeenAt: iso, activeMs: (sessions[0].activeMs || 0) + ACTIVITY_TICK_MS };
-        } else {
-          // e.g. app reopened after a closed session: start a new one
-          sessions.unshift({ id: `ses-${now.toString(36)}`, start: iso, lastSeenAt: iso, activeMs: ACTIVITY_TICK_MS });
-        }
-        return {
-          lastActiveAt: iso,
-          totalActiveMs: (u.totalActiveMs || 0) + ACTIVITY_TICK_MS,
-          sessions: sessions.slice(0, MAX_SESSIONS)
-        };
-      });
+      patchUserRecordRef.current(
+        activeUserId,
+        (u) => {
+          const sessions = Array.isArray(u.sessions) ? [...u.sessions] : [];
+          const cur = sessions[0];
+          const lastSeen = Date.parse(cur?.lastSeenAt || cur?.start || '') || 0;
+          const loginPatch = {};
+          if (cur && !cur.endedAt && now - lastSeen < SESSION_GAP_MS) {
+            sessions[0] = { ...cur, lastSeenAt: iso, activeMs: (cur.activeMs || 0) + ACTIVITY_TICK_MS };
+          } else {
+            // previous session went quiet (or was closed): close it and start a new visit
+            if (cur && !cur.endedAt) sessions[0] = { ...cur, endedAt: cur.lastSeenAt || iso };
+            sessions.unshift({ ...newSession(iso), activeMs: ACTIVITY_TICK_MS });
+            loginPatch.lastLoginAt = iso;
+            loginPatch.loginCount = (u.loginCount || 0) + 1;
+          }
+          return {
+            ...loginPatch,
+            lastActiveAt: iso,
+            totalActiveMs: (u.totalActiveMs || 0) + ACTIVITY_TICK_MS,
+            sessions: sessions.slice(0, MAX_SESSIONS)
+          };
+        },
+        null,
+        ACTIVITY_KEYS
+      );
     }, ACTIVITY_TICK_MS);
 
     return () => {
       events.forEach((ev) => window.removeEventListener(ev, mark));
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(timer);
     };
   }, [activeUserId]);
@@ -1921,80 +1994,60 @@ export function AppProvider({ children }) {
       updatedAt: new Date().toISOString()
     };
 
-    let updatedProjectFeatures = [];
+    // Compute the new order from the current features *before* updating state, so the exact
+    // same values are saved (computing inside setFeatures() could run after the save and
+    // send the old order to Firestore, which then moved the card to the bottom).
+    const currentProjFeatures = (features || [])
+      .filter((f) => f.projectId === feat.projectId && !f.isMainModule)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-    setFeatures((prev) => {
-      // 1. Separate current project's features from others
-      const otherProjectFeatures = prev.filter(
-        (f) => f.projectId !== feat.projectId || f.isMainModule
-      );
-      const currentProjFeatures = prev
-        .filter((f) => f.projectId === feat.projectId && !f.isMainModule)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-      // 2. Target column features without the dragged item
-      const targetColFeatures = currentProjFeatures.filter(
-        (f) => f.id !== featureId && f.status === targetStatus
-      );
-
-      // 3. Determine new order for the target column
-      let newColOrder = [];
-      if (!targetFeatureId || targetFeatureId === featureId) {
-        newColOrder = [...targetColFeatures, updatedItem];
-      } else {
-        const targetIdx = targetColFeatures.findIndex((f) => f.id === targetFeatureId);
-        if (targetIdx === -1) {
-          newColOrder = [...targetColFeatures, updatedItem];
-        } else {
-          const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
-          newColOrder = [...targetColFeatures];
-          newColOrder.splice(insertIdx, 0, updatedItem);
-        }
+    // Target column without the dragged card, then insert it where it was dropped
+    const targetColFeatures = currentProjFeatures.filter((f) => f.id !== featureId && f.status === targetStatus);
+    let newColOrder = [...targetColFeatures, updatedItem];
+    if (targetFeatureId && targetFeatureId !== featureId) {
+      const targetIdx = targetColFeatures.findIndex((f) => f.id === targetFeatureId);
+      if (targetIdx !== -1) {
+        newColOrder = [...targetColFeatures];
+        newColOrder.splice(position === 'before' ? targetIdx : targetIdx + 1, 0, updatedItem);
       }
+    }
 
-      // 4. Other columns in this project
-      const otherColsFeatures = currentProjFeatures.filter(
-        (f) => f.id !== featureId && f.status !== targetStatus
-      );
-
-      // 5. Combine and normalize order values across the project
-      const allThisProj = [...otherColsFeatures, ...newColOrder];
-      const COL_KEYS = ['backlog', 'in_dev', 'ready_for_qa', 'in_qa', 'verified'];
-      let finalThisProj = [];
-      let baseOrder = 1000;
-
-      for (const colKey of COL_KEYS) {
-        const colFeats =
-          colKey === targetStatus
-            ? newColOrder
-            : allThisProj
-                .filter((f) => f.status === colKey)
-                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-        colFeats.forEach((f) => {
-          finalThisProj.push({
-            ...f,
-            order: baseOrder
-          });
-          baseOrder += 1000;
-        });
-      }
-
-      const remainingUnmapped = allThisProj.filter((f) => !COL_KEYS.includes(f.status));
-      remainingUnmapped.forEach((f) => {
+    // Normalize order values across the project, column by column
+    const otherColsFeatures = currentProjFeatures.filter((f) => f.id !== featureId && f.status !== targetStatus);
+    const allThisProj = [...otherColsFeatures, ...newColOrder];
+    const COL_KEYS = ['backlog', 'in_dev', 'ready_for_qa', 'in_qa', 'verified'];
+    const finalThisProj = [];
+    let baseOrder = 1000;
+    for (const colKey of COL_KEYS) {
+      const colFeats =
+        colKey === targetStatus
+          ? newColOrder
+          : allThisProj.filter((f) => f.status === colKey).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      colFeats.forEach((f) => {
+        finalThisProj.push({ ...f, order: baseOrder });
+        baseOrder += 1000;
+      });
+    }
+    allThisProj
+      .filter((f) => !COL_KEYS.includes(f.status))
+      .forEach((f) => {
         finalThisProj.push({ ...f, order: baseOrder });
         baseOrder += 1000;
       });
 
-      updatedProjectFeatures = finalThisProj;
-      return [...otherProjectFeatures, ...finalThisProj];
+    // Only features whose order or status actually changed need saving
+    const before = new Map(currentProjFeatures.map((f) => [f.id, f]));
+    const changed = finalThisProj.filter((f) => {
+      const prev = before.get(f.id);
+      return !prev || prev.order !== f.order || prev.status !== f.status || f.id === featureId;
     });
 
-    if (firebaseStatus === 'connected') {
-      await saveFeatureToFirestore(updatedItem);
-      if (updatedProjectFeatures.length > 0) {
-        saveFeaturesOrderToFirestore(updatedProjectFeatures);
-      }
+    const finalById = new Map(finalThisProj.map((f) => [f.id, f]));
+    // Keep every other feature as-is; replace this project's features with the re-ordered ones
+    setFeatures((prev) => [...prev.filter((f) => !finalById.has(f.id)), ...finalThisProj]);
+
+    if (firebaseStatus === 'connected' && changed.length > 0) {
+      await saveFeaturesOrderToFirestore(changed);
     }
   };
 

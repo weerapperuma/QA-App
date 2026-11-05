@@ -2,7 +2,6 @@ import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import Header from './components/Header';
 import FeatureBoard from './components/FeatureBoard';
-import DefectsListView from './components/DefectsListView';
 import ReleaseGate from './components/ReleaseGate';
 import FeatureDetailModal from './components/FeatureDetailModal';
 import { MoveToFutureModal } from './components/FutureImprovements';
@@ -19,13 +18,14 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Login from './components/Login';
 import ProfilePage from './components/ProfilePage';
 import FutureImprovementsPage from './components/FutureImprovementsPage';
-import DevTestingPage from './components/DevTestingPage';
+import TestingPage from './components/TestingPage';
+import { TESTING_TAB_IDS } from './utils/testingTabs';
 import AdminActivityPage from './components/AdminActivityPage';
 
 function MainApp() {
   const { activeTab: requestedTab, isAuthenticated, needsProjectSelection, currentUser } = useApp();
   // Workspace pages stay locked until a working project is chosen (shown on My Profile)
-  const WORKSPACE_TABS = ['features', 'devtesting', 'board', 'release', 'improvements'];
+  const WORKSPACE_TABS = ['features', ...TESTING_TAB_IDS, 'release', 'improvements'];
   const activeTab = needsProjectSelection && WORKSPACE_TABS.includes(requestedTab) ? 'profile' : requestedTab;
 
   if (!isAuthenticated) {
@@ -43,10 +43,9 @@ function MainApp() {
 
       <main className={`main-content ${activeTab === 'features' ? 'main-content-features' : ''}`}>
         {activeTab === 'features' && <FeatureBoard />}
-        {activeTab === 'board' && <DefectsListView />}
         {activeTab === 'release' && <ReleaseGate />}
         {activeTab === 'improvements' && <FutureImprovementsPage />}
-        {activeTab === 'devtesting' && <DevTestingPage />}
+        {TESTING_TAB_IDS.includes(activeTab) && <TestingPage section={activeTab} />}
         {activeTab === 'profile' && <ProfilePage />}
         {activeTab === 'admin' && <AdminActivityPage />}
       </main>

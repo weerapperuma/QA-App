@@ -118,14 +118,19 @@ const mergeDuplicateUsers = (users) => {
   return Array.from(byId.values());
 };
 
-export async function saveUserToFirestore(user) {
+// onlyKeys: write just these fields (e.g. activity) so other devices' newer data isn't overwritten
+export async function saveUserToFirestore(user, onlyKeys = null) {
   if (!firestoreDb) return { success: false, error: 'Firebase is not connected' };
 
   try {
     const { _docId, _duplicateDocIds, ...data } = user;
     const userRef = doc(firestoreDb, 'users', _docId || user.id);
+    const payload = onlyKeys
+      ? Object.fromEntries(onlyKeys.filter((k) => k in data).map((k) => [k, data[k]]))
+      : data;
     await setDoc(userRef, cleanForFirestore({
-      ...data,
+      ...payload,
+      id: user.id,
       updatedAt: new Date().toISOString()
     }), { merge: true });
     return { success: true };
