@@ -429,15 +429,19 @@ function CheckLine({ ok, label, detail, warn = false }) {
 function CloseFeatureConfirm({ feature, check, onCancel, onReview, onPending }) {
   const { updateFeatureStatus } = useApp();
   const [confirmed, setConfirmed] = useState(false);
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const ready = check.canClose && confirmed;
+
+  const hasOpenItems = (check.openBugs.length > 0 || check.openSuggs.length > 0);
+  const ready = hasOpenItems ? (confirmed && riskAcknowledged) : confirmed;
 
   const close = async () => {
     if (!ready || saving) return;
     setSaving(true);
     await updateFeatureStatus(feature.id, 'verified', {
       confirmed: true,
+      hasOpenItems,
       ...(note.trim() ? { qaNotes: note.trim() } : {})
     });
     setSaving(false);
@@ -452,10 +456,16 @@ function CloseFeatureConfirm({ feature, check, onCancel, onReview, onPending }) 
       <div className="fd-checks">
         <CheckLine
           ok={check.openBugs.length === 0}
-          label="All defects passed QA"
+          warn={check.openBugs.length > 0}
+          label={check.openBugs.length === 0 ? "All defects passed QA" : `${check.openBugs.length} defect(s) open (QA risk decision)`}
           detail={`${check.bugsPassed}/${check.bugsTotal}${check.criticalOpen ? ` · ${check.criticalOpen} critical open` : ''}`}
         />
-        <CheckLine ok={check.openSuggs.length === 0} label="All suggestions passed QA" detail={`${check.suggsPassed}/${check.suggsTotal}`} />
+        <CheckLine
+          ok={check.openSuggs.length === 0}
+          warn={check.openSuggs.length > 0}
+          label={check.openSuggs.length === 0 ? "All suggestions passed QA" : `${check.openSuggs.length} suggestion(s) open (QA risk decision)`}
+          detail={`${check.suggsPassed}/${check.suggsTotal}`}
+        />
         <CheckLine
           ok={check.futurePending === 0}
           warn
@@ -464,41 +474,59 @@ function CloseFeatureConfirm({ feature, check, onCancel, onReview, onPending }) 
         />
       </div>
 
-      {!check.canClose ? (
-        <div className="fd-confirm-blocked">
-          <span>
-            {check.openBugs.length + check.openSuggs.length} item(s) still open. Get them QA passed, or move ones that must wait
-            (e.g. an API) to Future with the ⏳ button.
-          </span>
-          <button type="button" className="fb-btn" onClick={onReview}>
-            Review open items
-          </button>
+      {hasOpenItems && (
+        <div
+          className="fd-confirm-warning"
+          style={{
+            padding: '0.75rem 0.85rem',
+            background: 'rgba(234, 179, 8, 0.08)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            borderRadius: 'var(--radius-md)',
+            marginBottom: '0.75rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#eab308' }}>
+              ⚠️ {check.openBugs.length + check.openSuggs.length} Open Item(s) Remaining
+            </span>
+            <button type="button" className="fb-btn" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }} onClick={onReview}>
+              Review open items
+            </button>
+          </div>
+          <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+            As QA, you have full authority to assess whether remaining bugs ({check.openBugs.length}) or suggestions ({check.openSuggs.length}) represent an acceptable risk or are non-blocking to close this feature.
+          </p>
         </div>
-      ) : (
-        <>
-          <textarea
-            className="form-textarea"
-            rows={2}
-            placeholder="QA sign-off note (optional)"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-          <label className="fd-confirm-tick">
-            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-            <span>I verified this feature on staging and it is ready to close.</span>
-          </label>
-        </>
       )}
+
+      <textarea
+        className="form-textarea"
+        rows={2}
+        placeholder={hasOpenItems ? "QA sign-off & risk notes (e.g. why remaining items are acceptable risk / non-blocking)..." : "QA sign-off note (optional)"}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        style={{ marginBottom: '0.5rem' }}
+      />
+
+      {hasOpenItems && (
+        <label className="fd-confirm-tick" style={{ marginBottom: '0.4rem' }}>
+          <input type="checkbox" checked={riskAcknowledged} onChange={(e) => setRiskAcknowledged(e.target.checked)} />
+          <span>I assessed the {check.openBugs.length + check.openSuggs.length} open item(s) and confirmed the risk is acceptable to close this feature.</span>
+        </label>
+      )}
+
+      <label className="fd-confirm-tick">
+        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+        <span>I verified this feature on staging and sign off on closing it.</span>
+      </label>
 
       <div className="pf-actions">
         <button type="button" className="fb-btn" onClick={onCancel} disabled={saving}>
           Cancel
         </button>
-        {check.canClose && (
-          <button type="button" className="fb-btn" onClick={onPending} disabled={saving} title="Close now, track an unfinished dependency">
-            <Hourglass size={13} /> Close with Pending Item
-          </button>
-        )}
+        <button type="button" className="fb-btn" onClick={onPending} disabled={saving} title="Close now, track an unfinished dependency in Future">
+          <Hourglass size={13} /> Close with Pending Item
+        </button>
         <button type="button" className="fb-btn fd-btn-pass" onClick={close} disabled={!ready || saving}>
           <CheckCircle2 size={14} /> {saving ? 'Closing…' : 'Close Feature'}
         </button>
@@ -632,9 +660,9 @@ function FeatureDetailContent({ focus }) {
               </button>
             )}
             {!isQaUser && <span className="fd-wait">Waiting for QA sign-off</span>}
-            {!closeCheck.canClose && (
-              <span className="fd-next-hint">
-                {closeCheck.openBugs.length + closeCheck.openSuggs.length} open item(s) must pass QA first
+            {isQaUser && (closeCheck.openBugs.length > 0 || closeCheck.openSuggs.length > 0) && (
+              <span className="fd-next-hint" style={{ color: '#eab308' }}>
+                {closeCheck.openBugs.length + closeCheck.openSuggs.length} open item(s) — QA risk decision
               </span>
             )}
           </>
@@ -823,10 +851,10 @@ function FeatureDetailContent({ focus }) {
             </form>
           )}
 
-          {showCloseWithPending && isQaUser && closeCheck.canClose && f.status !== 'verified' && (
+          {showCloseWithPending && isQaUser && f.status !== 'verified' && (
             <div className="fd-form">
               <div className="pf-note">
-                All QA passed. The feature closes now and the unfinished part (e.g. a pending API) goes to Future Improvements.
+                The feature closes now and the unfinished part (e.g. a pending API or deferred task) goes to Future Improvements.
               </div>
               <FutureItemForm
                 submitLabel="Close Feature & Save"

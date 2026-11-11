@@ -1504,14 +1504,15 @@ export function AppProvider({ children }) {
 
 
   // ===== Closing a feature is a deliberate, checked step =====
-  // A feature can only be closed (verified) when every defect & suggestion has passed QA,
-  // and only from the confirmation step in the feature window ({ confirmed: true }).
+  // Only QA can close a feature ({ confirmed: true }).
+  // QA assesses whether remaining open defects or suggestions represent acceptable risk to release.
   const DONE_ITEM = ['verified', 'implemented', 'qa_passed', 'qa passed', 'closed'];
   const getFeatureCloseCheck = (feat) => {
     const bugs = feat?.bugs || [];
     const suggs = feat?.suggestions || [];
     const openBugs = bugs.filter((b) => !DONE_ITEM.includes((b.status || '').toLowerCase().trim()));
     const openSuggs = suggs.filter((s) => !DONE_ITEM.includes((s.status || '').toLowerCase().trim()));
+    const allPassed = openBugs.length === 0 && openSuggs.length === 0;
     return {
       bugsTotal: bugs.length,
       bugsPassed: bugs.length - openBugs.length,
@@ -1521,7 +1522,10 @@ export function AppProvider({ children }) {
       openSuggs,
       criticalOpen: openBugs.filter((b) => b.severity === 'Critical').length,
       futurePending: (feat?.futureItems || []).filter((i) => i.status !== 'done').length,
-      canClose: openBugs.length === 0 && openSuggs.length === 0
+      allPassed,
+      // QA decides whether open items are acceptable risk, so QA is allowed to close
+      canClose: true,
+      hasOpenItems: !allPassed
     };
   };
 
@@ -1815,10 +1819,6 @@ export function AppProvider({ children }) {
         requestCloseFeature(featureId);
         return;
       }
-      if (!getFeatureCloseCheck(feat).canClose) {
-        addToast('All defects and suggestions must pass QA before the feature can be closed.', 'warning', 'Cannot Close Yet');
-        return;
-      }
     }
 
     if (newStatus === 'ready_for_qa') {
@@ -1837,34 +1837,49 @@ export function AppProvider({ children }) {
         severity: 'info'
       });
     } else if (newStatus === 'verified') {
-      // Check if any open blocker bugs exist
-      const openBugs = (feat.bugs || []).filter((b) => b.status !== 'verified');
-      if (openBugs.length > 0) {
-        addToast(
-          `Warning: Feature has ${openBugs.length} open bug(s). Please resolve bugs before final verification!`,
-          'warning',
-          'Verification Warning'
-        );
-      }
+      const bugs = feat.bugs || [];
+      const suggs = feat.suggestions || [];
+      const openBugs = bugs.filter((b) => !DONE_ITEM.includes((b.status || '').toLowerCase().trim()));
+      const openSuggs = suggs.filter((s) => !DONE_ITEM.includes((s.status || '').toLowerCase().trim()));
+      const totalOpen = openBugs.length + openSuggs.length;
+
       confetti({
         particleCount: 100,
         spread: 80,
         origin: { y: 0.6 }
       });
-      addToast(
-        `🎉 Feature "${feat.name}" was VERIFIED & CLOSED by QA!`,
-        'verified',
-        'Feature Completed'
-      );
-      addNotification({
-        type: 'feature_verified',
-        title: `Feature QA Passed & Closed: "${feat.name}" 🎉`,
-        message: `Feature "${feat.name}" passed all QA verification checks and was signed off & closed by ${currentUser?.name || 'QA'}! Ready for release.`,
-        targetRole: 'developer',
-        targetFeatureId: feat.id,
-        targetFeatureName: feat.name,
-        severity: 'success'
-      });
+
+      if (totalOpen > 0) {
+        addToast(
+          `Feature "${feat.name}" was VERIFIED & CLOSED by QA (${totalOpen} open item(s) accepted as non-blocking risk).`,
+          'verified',
+          'Feature Closed by QA'
+        );
+        addNotification({
+          type: 'feature_verified',
+          title: `Feature QA Closed: "${feat.name}" 🎉`,
+          message: `Feature "${feat.name}" was signed off & closed by QA (${currentUser?.name || 'QA'}) with ${totalOpen} open item(s) assessed as acceptable risk.${metadata?.qaNotes ? ` Note: "${metadata.qaNotes}".` : ''} Ready for release.`,
+          targetRole: 'developer',
+          targetFeatureId: feat.id,
+          targetFeatureName: feat.name,
+          severity: 'success'
+        });
+      } else {
+        addToast(
+          `🎉 Feature "${feat.name}" was VERIFIED & CLOSED by QA!`,
+          'verified',
+          'Feature Completed'
+        );
+        addNotification({
+          type: 'feature_verified',
+          title: `Feature QA Passed & Closed: "${feat.name}" 🎉`,
+          message: `Feature "${feat.name}" passed all QA verification checks and was signed off & closed by ${currentUser?.name || 'QA'}! Ready for release.`,
+          targetRole: 'developer',
+          targetFeatureId: feat.id,
+          targetFeatureName: feat.name,
+          severity: 'success'
+        });
+      }
     } else if (newStatus === 'in_dev' && feat.status === 'backlog') {
       addToast(`🛠️ Feature "${feat.name}" pulled into development.`, 'info', 'Development Started');
       addNotification({
@@ -2639,10 +2654,6 @@ export function AppProvider({ children }) {
     const closing = options.closeFeature && feat.status !== 'verified';
     if (closing && !canQaDecide) {
       denyQaOnly('Closing a feature');
-      return;
-    }
-    if (closing && !getFeatureCloseCheck(feat).canClose) {
-      addToast('All defects and suggestions must pass QA (or be moved to Future) before closing.', 'warning', 'Cannot Close Yet');
       return;
     }
     await patchFeatureFutureItems(featureId, (items) => [newItem, ...items], closing ? { status: 'verified' } : {});
