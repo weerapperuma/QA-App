@@ -2266,6 +2266,11 @@ export function AppProvider({ children }) {
       denyQaOnly('Passing or failing a defect');
       return;
     }
+    const failReason = (extraData?.qaFailReason || extraData?.failReason || '').trim();
+    if (newStatus === 'qa_failed' && !failReason) {
+      addToast('A reason is required to fail QA verification.', 'critical', 'Reason Required');
+      return;
+    }
     const bugRec = (feat.bugs || []).find((b) => b.id === bugId) || {};
     const bugDev = [bugRec.assignedDev || feat.assignedDev];
     const bugQa = [feat.assignedQa, bugRec.reportedBy];
@@ -2308,7 +2313,7 @@ export function AppProvider({ children }) {
       addNotification({
         type: 'qa_failed',
         title: `QA Retest Failed: [${bugId}] 🔴`,
-        message: `Defect [${bugId}] on feature "${feat.name}" failed QA verification and was returned for rework.`,
+        message: `Defect [${bugId}] on feature "${feat.name}" failed QA verification${failReason ? `: "${failReason}"` : ''} and was returned for rework.`,
         targetRole: 'developer',
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
@@ -2482,6 +2487,11 @@ export function AppProvider({ children }) {
       denyQaOnly('Passing or failing a suggestion');
       return;
     }
+    const failReason = (extraData?.qaFailReason || extraData?.failReason || '').trim();
+    if (newStatus === 'qa_failed' && !failReason) {
+      addToast('A reason is required to fail QA verification.', 'critical', 'Reason Required');
+      return;
+    }
     const suggRec = (feat.suggestions || []).find((x) => x.id === suggId) || {};
     const suggQa = [feat.assignedQa, suggRec.submittedBy];
 
@@ -2522,7 +2532,7 @@ export function AppProvider({ children }) {
       addNotification({
         type: 'qa_failed',
         title: `Suggestion Review Failed: [${suggId}]`,
-        message: `Suggestion [${suggId}] on feature "${feat.name}" needs further adjustments.`,
+        message: `Suggestion [${suggId}] on feature "${feat.name}" needs further adjustments${failReason ? `: "${failReason}"` : ''}.`,
         targetRole: 'developer',
         targetFeatureId: feat.id,
         targetFeatureName: feat.name,
@@ -2826,6 +2836,7 @@ export function AppProvider({ children }) {
         priority: updatedData.priority || updatedData.severity || existingBug.severity || 'Medium',
         notes: updatedData.notes || updatedData.reproSteps || existingBug.reproSteps || '',
         devNote: updatedData.devNote !== undefined ? updatedData.devNote : (existingBug.devNote || ''),
+        qaFailReason: updatedData.qaFailReason !== undefined ? updatedData.qaFailReason : (existingBug.qaFailReason || ''),
         status: updatedData.status || existingBug.status || 'open',
         reportedBy: existingBug.reportedBy || (currentUser && currentUser.id) || 'user-admin',
         createdAt: existingBug.createdAt || new Date().toISOString(),
@@ -2852,6 +2863,7 @@ export function AppProvider({ children }) {
         severity: updatedData.severity || updatedData.priority || existingSugg.priority || 'Medium',
         reproSteps: updatedData.reproSteps || updatedData.notes || existingSugg.notes || '',
         devNote: updatedData.devNote !== undefined ? updatedData.devNote : (existingSugg.devNote || ''),
+        qaFailReason: updatedData.qaFailReason !== undefined ? updatedData.qaFailReason : (existingSugg.qaFailReason || ''),
         status: updatedData.status || existingSugg.status || 'open',
         reportedBy: existingSugg.reportedBy || (currentUser && currentUser.id) || 'user-admin',
         assignedDev: feat.assignedDev || (team.find((m) => hasRole(m, ROLES.DEVELOPER)) || team[0])?.id || 'user-admin',

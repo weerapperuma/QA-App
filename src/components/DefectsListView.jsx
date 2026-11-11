@@ -7,6 +7,7 @@ import {
   Lightbulb,
   Search,
   CheckCircle2,
+  XCircle,
   Plus,
   Layers,
   Folder,
@@ -102,6 +103,11 @@ export default function DefectsListView() {
   const [devFixedTarget, setDevFixedTarget] = useState(null);
   const [devNoteText, setDevNoteText] = useState('');
 
+  // QA Fail Reason Modal state
+  const [isQaFailModalOpen, setIsQaFailModalOpen] = useState(false);
+  const [qaFailTarget, setQaFailTarget] = useState(null);
+  const [qaFailReasonText, setQaFailReasonText] = useState('');
+
   // Edit Modal state
   const [editItem, setEditItem] = useState(null);
   // Column sorting: summary (latest first) | type (severity) | status (workflow)
@@ -111,6 +117,7 @@ export default function DefectsListView() {
   const [editSeverity, setEditSeverity] = useState('Medium');
   const [editReproSteps, setEditReproSteps] = useState('');
   const [editDevNote, setEditDevNote] = useState('');
+  const [editQaFailReason, setEditQaFailReason] = useState('');
   const [editStatus, setEditStatus] = useState('open');
 
   // Selected item modal for inspecting details
@@ -438,12 +445,18 @@ export default function DefectsListView() {
     setEditSeverity(item.severity || item.priority || 'Medium');
     setEditReproSteps(item.reproSteps || item.notes || '');
     setEditDevNote(item.devNote || '');
+    setEditQaFailReason(item.qaFailReason || '');
     setEditStatus(item.status || 'open');
   };
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
     if (!editItem || !editTitle.trim()) return;
+
+    if (editStatus === 'qa_failed' && !editQaFailReason.trim()) {
+      if (addToast) addToast('QA Failure Reason is required when marking status as QA Failed.', 'critical');
+      return;
+    }
 
     if (editType !== editItem.type) {
       convertDefectType(editItem.featureId, editItem.id, editItem.type, editType, {
@@ -453,6 +466,7 @@ export default function DefectsListView() {
         reproSteps: editReproSteps.trim(),
         notes: editReproSteps.trim(),
         devNote: editDevNote.trim(),
+        qaFailReason: editQaFailReason.trim(),
         status: editStatus
       });
     } else if (editType === 'suggestion') {
@@ -461,6 +475,7 @@ export default function DefectsListView() {
         priority: editSeverity,
         notes: editReproSteps.trim(),
         devNote: editDevNote.trim(),
+        qaFailReason: editQaFailReason.trim(),
         status: editStatus
       });
     } else {
@@ -469,6 +484,7 @@ export default function DefectsListView() {
         severity: editSeverity,
         reproSteps: editReproSteps.trim(),
         devNote: editDevNote.trim(),
+        qaFailReason: editQaFailReason.trim(),
         status: editStatus
       });
     }
@@ -491,6 +507,18 @@ export default function DefectsListView() {
   const handleStatusChange = (item, newStatus) => {
     if (!newStatus || newStatus === item.status) return;
 
+    if (newStatus === 'qa_failed') {
+      setQaFailTarget(item);
+      setQaFailReasonText(item.qaFailReason || '');
+      setIsQaFailModalOpen(true);
+      return;
+    }
+
+    if (newStatus === 'ready_for_qa') {
+      openDevFixedModal(item);
+      return;
+    }
+
     if (item.type === 'suggestion') {
       updateSuggestionStatus(item.featureId, item.id, newStatus);
     } else {
@@ -500,6 +528,36 @@ export default function DefectsListView() {
     if (viewItem && viewItem.id === item.id) {
       setViewItem((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
+  };
+
+  const handleConfirmQaFail = (e) => {
+    e.preventDefault();
+    if (!qaFailTarget) return;
+    const reason = qaFailReasonText.trim();
+    if (!reason) {
+      if (addToast) addToast('A reason is required to fail QA verification.', 'critical');
+      return;
+    }
+
+    const extra = { qaFailReason: reason };
+    if (qaFailTarget.type === 'suggestion') {
+      updateSuggestionStatus(qaFailTarget.featureId, qaFailTarget.id, 'qa_failed', extra);
+    } else {
+      updateFeatureBugStatus(qaFailTarget.featureId, qaFailTarget.id, 'qa_failed', extra);
+    }
+
+    setIsQaFailModalOpen(false);
+    if (viewItem && viewItem.id === qaFailTarget.id) {
+      setViewItem((prev) => (prev ? { ...prev, status: 'qa_failed', qaFailReason: reason } : null));
+    }
+    setQaFailTarget(null);
+    setQaFailReasonText('');
+  };
+
+  const handleCancelQaFail = () => {
+    setIsQaFailModalOpen(false);
+    setQaFailTarget(null);
+    setQaFailReasonText('');
   };
 
   // Status Dropdown rendering current status with theme-friendly styling
@@ -935,6 +993,17 @@ export default function DefectsListView() {
                           </span>
                         </div>
                       )}
+
+                      {item.qaFailReason && normalizeStatus(item.status) === 'qa_failed' && (
+                        <div className="summary-dev-note" style={{ cursor: 'text', marginTop: '2px' }}>
+                          <span className="summary-dev-badge" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--status-critical)', borderColor: 'var(--status-critical-border)' }}>
+                            QA Fail Reason
+                          </span>
+                          <span style={{ fontStyle: 'italic', color: 'var(--status-critical)' }}>
+                            "{item.qaFailReason}"
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Type & Severity Icon */}
@@ -1156,6 +1225,94 @@ export default function DefectsListView() {
         </div>
       )}
 
+      {/* QA Fail Reason Modal */}
+      {isQaFailModalOpen && qaFailTarget && (
+        <div className="modal-overlay" onClick={handleCancelQaFail}>
+          <div className="modal-container" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ borderBottomColor: 'var(--status-critical-border)' }}>
+              <div>
+                <span style={{ fontWeight: 800, fontSize: '1.05rem', display: 'block', color: 'var(--status-critical)' }}>
+                  🔴 Mark as QA Failed
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Provide failure reason to return to Developer for rework
+                </span>
+              </div>
+              <button className="btn-icon" onClick={handleCancelQaFail}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmQaFail} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-body single-col" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
+                <div style={{ padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                    Target {qaFailTarget.type === 'bug' ? 'Defect' : 'Suggestion'}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {qaFailTarget.title}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 700, color: 'var(--status-critical)' }}>
+                    Retest Failure Reason <span style={{ color: 'var(--status-critical)' }}>* (Required)</span>
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="e.g. Test failed on iOS Safari: submit button remains unresponsive after filling all fields, error toast not shown..."
+                    value={qaFailReasonText}
+                    onChange={(e) => setQaFailReasonText(e.target.value)}
+                    style={{ minHeight: '95px', borderColor: 'var(--status-critical-border)' }}
+                    autoFocus
+                    required
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    This reason will be attached to the ticket and sent to the developer so they understand what failed and how to reproduce it.
+                  </span>
+                </div>
+              </div>
+
+              <div
+                className="modal-footer"
+                style={{
+                  flexShrink: 0,
+                  padding: '1rem 1.5rem',
+                  borderTop: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '0.5rem'
+                }}
+              >
+                <button type="button" className="btn btn-secondary" onClick={handleCancelQaFail}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={!qaFailReasonText.trim()}
+                  style={{
+                    background: qaFailReasonText.trim() ? 'var(--status-critical)' : 'var(--border-medium)',
+                    color: '#ffffff',
+                    border: '1px solid var(--status-critical-border)',
+                    cursor: qaFailReasonText.trim() ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 700
+                  }}
+                >
+                  <XCircle size={14} />
+                  <span>Confirm QA Fail</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Defect / Suggestion Modal */}
       {editItem && (
         <div className="modal-overlay" onClick={() => setEditItem(null)}>
@@ -1296,6 +1453,25 @@ export default function DefectsListView() {
                     style={{ minHeight: '65px' }}
                   />
                 </div>
+
+                {editStatus === 'qa_failed' && (
+                  <div className="form-group" style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.06)', borderRadius: 'var(--radius-md)', border: '1px solid var(--status-critical-border)' }}>
+                    <label className="form-label" style={{ color: 'var(--status-critical)', fontWeight: 700 }}>
+                      QA Retest Failure Reason <span style={{ color: 'var(--status-critical)' }}>* (Required)</span>
+                    </label>
+                    <textarea
+                      className="form-textarea"
+                      placeholder="Explain why verification failed and what steps or behavior need developer rework..."
+                      value={editQaFailReason}
+                      onChange={(e) => setEditQaFailReason(e.target.value)}
+                      style={{ minHeight: '70px', borderColor: 'var(--status-critical-border)' }}
+                      required
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--status-critical)', marginTop: '4px', display: 'block' }}>
+                      A reason must be provided when setting status to QA Failed.
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div
@@ -1539,6 +1715,17 @@ export default function DefectsListView() {
                   </strong>
                   <p style={{ fontSize: '0.84rem', color: 'var(--text-primary)', margin: 0 }}>
                     {viewItem.devNote}
+                  </p>
+                </div>
+              )}
+
+              {viewItem.qaFailReason && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--status-critical)', display: 'block', marginBottom: '4px' }}>
+                    🔴 QA Retest Failure Reason:
+                  </strong>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-primary)', margin: 0 }}>
+                    {viewItem.qaFailReason}
                   </p>
                 </div>
               )}

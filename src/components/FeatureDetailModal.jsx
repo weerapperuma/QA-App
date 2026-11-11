@@ -93,6 +93,8 @@ function ItemRow({ item, kind, featureId, focused = false, scrollTo = false }) {
     canQaDecide
   } = useApp();
   const [expanded, setExpanded] = useState(focused);
+  const [isFailing, setIsFailing] = useState(false);
+  const [failReason, setFailReason] = useState('');
   const rowRef = useRef(null);
   useEffect(() => {
     if (!scrollTo) return undefined;
@@ -105,16 +107,30 @@ function ItemRow({ item, kind, featureId, focused = false, scrollTo = false }) {
   const status = itemStatus(item.status);
   const level = isBug ? item.severity : item.priority;
 
+  const handleConfirmFail = () => {
+    if (!failReason.trim()) return;
+    const extra = { qaFailReason: failReason.trim() };
+    if (isBug) {
+      updateFeatureBugStatus(featureId, item.id, 'qa_failed', extra);
+    } else {
+      updateSuggestionStatus(featureId, item.id, 'qa_failed', extra);
+    }
+    setIsFailing(false);
+    setFailReason('');
+  };
+
   const details = isBug
     ? [
         ['Steps', item.reproSteps],
         ['Expected', item.expectedResult],
         ['Actual', item.actualResult],
-        ['Dev note', item.devNote]
+        ['Dev note', item.devNote],
+        ['QA Fail Reason', item.qaFailReason]
       ]
     : [
         ['Notes', item.notes],
-        ['Dev note', item.devNote]
+        ['Dev note', item.devNote],
+        ['QA Fail Reason', item.qaFailReason]
       ];
   const hasDetails = details.some(([, v]) => v);
 
@@ -152,14 +168,29 @@ function ItemRow({ item, kind, featureId, focused = false, scrollTo = false }) {
               <button type="button" className="fd-act pass" onClick={() => setStatus('verified')}>
                 <CheckCircle2 size={11} /> Pass
               </button>
-              <button type="button" className="fd-act fail" onClick={() => setStatus('qa_failed')}>
+              <button
+                type="button"
+                className="fd-act fail"
+                onClick={() => {
+                  setIsFailing((prev) => !prev);
+                  setFailReason(item.qaFailReason || '');
+                }}
+              >
                 <XCircle size={11} /> Fail
               </button>
             </>
           )}
           {st === 'ready_for_qa' && !canQaDecide && <span className="fd-wait">Waiting for QA</span>}
           {isPassed(st) && canQaDecide && (
-            <button type="button" className="fd-act" onClick={() => setStatus('qa_failed')} title="Re-open as QA failed">
+            <button
+              type="button"
+              className="fd-act"
+              onClick={() => {
+                setIsFailing((prev) => !prev);
+                setFailReason(item.qaFailReason || '');
+              }}
+              title="Re-open as QA failed"
+            >
               <RotateCcw size={11} />
             </button>
           )}
@@ -181,6 +212,58 @@ function ItemRow({ item, kind, featureId, focused = false, scrollTo = false }) {
           </button>
         </div>
       </div>
+
+      {isFailing && (
+        <div style={{ marginTop: '0.5rem', padding: '0.65rem 0.75rem', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid var(--status-critical-border)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--status-critical)' }}>
+              🔴 QA Retest Failure Reason * (Required)
+            </span>
+            <button
+              type="button"
+              onClick={() => { setIsFailing(false); setFailReason(''); }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <textarea
+            className="form-textarea"
+            placeholder="Explain why verification failed and what needs rework..."
+            value={failReason}
+            onChange={(e) => setFailReason(e.target.value)}
+            style={{ width: '100%', minHeight: '60px', fontSize: '0.78rem', marginBottom: '0.45rem', borderColor: 'var(--status-critical-border)' }}
+            autoFocus
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }}
+              onClick={() => { setIsFailing(false); setFailReason(''); }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!failReason.trim()}
+              style={{
+                fontSize: '0.74rem',
+                padding: '0.25rem 0.6rem',
+                background: failReason.trim() ? 'var(--status-critical)' : 'var(--border-medium)',
+                color: '#ffffff',
+                border: '1px solid var(--status-critical-border)',
+                cursor: failReason.trim() ? 'pointer' : 'not-allowed',
+                fontWeight: 700
+              }}
+              onClick={handleConfirmFail}
+            >
+              Confirm QA Fail
+            </button>
+          </div>
+        </div>
+      )}
 
       {expanded && hasDetails && (
         <div className="fd-item-details">
