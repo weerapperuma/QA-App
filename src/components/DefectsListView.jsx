@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import SearchableDropdown from './SearchableDropdown';
+import MultiSelectDropdown from './MultiSelectDropdown';
 import {
   Bug,
   Lightbulb,
@@ -141,6 +142,23 @@ export default function DefectsListView() {
     return s;
   };
 
+  // Helper to extract active status keys from statusFilter (array, string, or 'all')
+  const getActiveStatusFilters = (val) => {
+    if (!val || val === 'all') return [];
+    if (Array.isArray(val)) {
+      return val.filter((s) => s && s !== 'all').map(normalizeStatus);
+    }
+    return [normalizeStatus(val)];
+  };
+
+  const STATUS_DEFINITIONS = [
+    { value: 'open', label: 'Need Dev', icon: '🟡', dotColor: '#eab308' },
+    { value: 'in_dev', label: 'In Development', icon: '🔵', dotColor: '#38bdf8' },
+    { value: 'ready_for_qa', label: 'Dev Fixed', icon: '🟣', dotColor: '#a855f7' },
+    { value: 'verified', label: 'QA Passed', icon: '🟢', dotColor: '#22c55e' },
+    { value: 'qa_failed', label: 'QA Failed', icon: '🔴', dotColor: '#ef4444' }
+  ];
+
   // Derive unique module names from features with consistent trimming
   const uniqueModules = Array.from(
     new Set((projectFeatures || []).map((f) => (f.moduleName || 'General').trim()).filter(Boolean))
@@ -165,6 +183,30 @@ export default function DefectsListView() {
     : projectFeatures.filter(
         (f) => (f.moduleName || 'General').trim().toLowerCase() === moduleFilter.trim().toLowerCase()
       );
+
+  // Status options formatted for MultiSelectDropdown with dynamic context-aware live defect counts
+  const statusOptions = STATUS_DEFINITIONS.map((def) => {
+    const count = allFeatureDefects.filter((item) => {
+      if (moduleFilter !== 'all') {
+        const itemMod = (item.moduleName || 'General').trim().toLowerCase();
+        if (itemMod !== moduleFilter.trim().toLowerCase()) return false;
+      }
+      if (featureFilter !== 'all') {
+        const targetFeat = projectFeatures.find((f) => String(f.id) === String(featureFilter));
+        const matchId = String(item.featureId) === String(featureFilter);
+        const matchCode = item.featureCode && String(item.featureCode) === String(featureFilter);
+        const matchTargetCode = targetFeat && targetFeat.code && String(item.featureCode || item.featureId) === String(targetFeat.code);
+        if (!matchId && !matchCode && !matchTargetCode) return false;
+      }
+      if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+      return normalizeStatus(item.status) === def.value;
+    }).length;
+
+    return {
+      ...def,
+      badge: count
+    };
+  });
 
   // Feature options formatted for SearchableDropdown with module tag and defect counts
   // Feature options: badge shows QA completion (QA passed / total) as a percentage
@@ -206,13 +248,15 @@ export default function DefectsListView() {
     updateDefectsFilter(updates);
   };
 
+  const activeStatusFilters = getActiveStatusFilters(statusFilter);
+
   // Check if any filter is active
   const isAnyFilterActive =
     search.trim() !== '' ||
     typeFilter !== 'all' ||
     moduleFilter !== 'all' ||
     featureFilter !== 'all' ||
-    statusFilter !== 'all' ||
+    activeStatusFilters.length > 0 ||
     severityFilter !== 'all';
 
   const resetAllFilters = () => {
@@ -249,8 +293,10 @@ export default function DefectsListView() {
       if (!matchId && !matchCode && !matchTargetCode) return false;
     }
 
-    // 4. Status Filter
-    if (statusFilter !== 'all' && normalizeStatus(item.status) !== normalizeStatus(statusFilter)) return false;
+    // 4. Status Filter (supports multi-select of one or more statuses)
+    if (activeStatusFilters.length > 0) {
+      if (!activeStatusFilters.includes(normalizeStatus(item.status))) return false;
+    }
 
     // 5. Severity Filter
     if (severityFilter !== 'all') {
@@ -692,20 +738,18 @@ export default function DefectsListView() {
             dropdownWidth="320px"
           />
 
-          {/* Status Filter Dropdown */}
-          <select
-            className="filter-select"
+          {/* Status Multi-Select Filter Dropdown */}
+          <MultiSelectDropdown
+            options={statusOptions}
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ fontSize: '0.8rem', padding: '0.42rem 0.65rem' }}
-          >
-            <option value="all">All Statuses</option>
-            <option value="open">🟡 Need Dev</option>
-            <option value="in_dev">🔵 In Development</option>
-            <option value="ready_for_qa">🟣 Dev Fixed</option>
-            <option value="verified">🟢 QA Passed</option>
-            <option value="qa_failed">🔴 QA Failed</option>
-          </select>
+            onChange={setStatusFilter}
+            placeholder="All Statuses"
+            allLabel="All Statuses"
+            icon={Filter}
+            minWidth="160px"
+            maxWidth="240px"
+            dropdownWidth="260px"
+          />
 
           {/* Severity Filter Dropdown */}
           <select
