@@ -32,6 +32,9 @@ export default function EditFeatureModal() {
   const [targetRelease, setTargetRelease] = useState('v1.0.0');
   const [devNotes, setDevNotes] = useState('');
   const [prLink, setPrLink] = useState('');
+  const [estimatedHours, setEstimatedHours] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const devs = team.filter((m) => (hasRole(m, ROLES.DEVELOPER) && m.active !== false));
@@ -56,6 +59,9 @@ export default function EditFeatureModal() {
       setTargetRelease(editingFeature.targetRelease || 'v1.0.0');
       setDevNotes(editingFeature.devNotes || '');
       setPrLink(editingFeature.prLink || '');
+      setEstimatedHours(editingFeature.estimatedHours ? String(editingFeature.estimatedHours) : '');
+      setStartDate(editingFeature.startDate || '');
+      setDueDate(editingFeature.dueDate || '');
     }
   }, [editingFeature, isEditFeatureModalOpen]);
 
@@ -71,6 +77,8 @@ export default function EditFeatureModal() {
     }
     if (!finalModule) finalModule = 'General';
 
+    const parsedHours = parseFloat(estimatedHours);
+
     setSubmitting(true);
     await updateFeature(editingFeature.id, {
       name: name.trim(),
@@ -81,7 +89,10 @@ export default function EditFeatureModal() {
       assignedQa,
       targetRelease,
       devNotes: devNotes.trim(),
-      prLink: prLink.trim()
+      prLink: prLink.trim(),
+      estimatedHours: Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : null,
+      startDate: startDate || '',
+      dueDate: dueDate || ''
     });
     setSubmitting(false);
     closeEditFeatureModal();
@@ -372,6 +383,40 @@ export default function EditFeatureModal() {
                 value={devNotes}
                 onChange={(e) => setDevNotes(e.target.value)}
               />
+            </div>
+
+            {/* Timeline: Estimated Hours, Start Date, Due Date */}
+            <div className="responsive-form-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Estimated Hours</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  className="form-input"
+                  placeholder="e.g. 5"
+                  value={estimatedHours}
+                  onChange={(e) => setEstimatedHours(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Start Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Target / Due Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

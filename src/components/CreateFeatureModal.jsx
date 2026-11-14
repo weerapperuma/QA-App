@@ -33,6 +33,9 @@ export default function CreateFeatureModal() {
   const [assignedQa, setAssignedQa] = useState(() => (team.find((m) => (hasRole(m, ROLES.QA) && m.active !== false)) || team[0])?.id || 'user-admin');
   const [targetRelease, setTargetRelease] = useState('v1.0.0');
   const [devNotes, setDevNotes] = useState('');
+  const [estimatedHours, setEstimatedHours] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // New features go to the Feature Pool by default; tick to start development right away
   const [startNow, setStartNow] = useState(false);
@@ -77,6 +80,9 @@ export default function CreateFeatureModal() {
     setDescription('');
     setIsCreatingNewModule(false);
     setNewModuleName('');
+    setEstimatedHours('');
+    setStartDate('');
+    setDueDate('');
     setStartNow(false);
   };
 
@@ -92,6 +98,8 @@ export default function CreateFeatureModal() {
     }
     if (!finalModule) finalModule = 'General';
 
+    const parsedHours = parseFloat(estimatedHours);
+
     setSubmitting(true);
     await createFeature({
       name: name.trim(),
@@ -101,6 +109,9 @@ export default function CreateFeatureModal() {
       assignedQa: assignedQa || availableQas[0]?.id || 'user-admin',
       targetRelease,
       devNotes: devNotes || `Initial feature scoping for ${name.trim()}.`,
+      estimatedHours: Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : null,
+      startDate: startDate || '',
+      dueDate: dueDate || '',
       status: startNow ? 'in_dev' : 'backlog'
     }, { keepOpen });
     setSubmitting(false);
@@ -108,6 +119,9 @@ export default function CreateFeatureModal() {
     setName('');
     setDescription('');
     setDevNotes('');
+    setEstimatedHours('');
+    setStartDate('');
+    setDueDate('');
     if (keepOpen && isCreatingNewModule) {
       // module now exists; keep adding to it
       setSelectedModule(finalModule);
@@ -353,6 +367,40 @@ export default function CreateFeatureModal() {
                   placeholder="Notes for QA / Dev team..."
                   value={devNotes}
                   onChange={(e) => setDevNotes(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Timeline: Estimated Hours, Start Date, Due Date */}
+            <div className="responsive-form-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Estimated Hours</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  className="form-input"
+                  placeholder="e.g. 5"
+                  value={estimatedHours}
+                  onChange={(e) => setEstimatedHours(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Start Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Target / Due Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
                 />
               </div>
             </div>

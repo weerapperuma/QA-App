@@ -2,7 +2,6 @@ import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import Header from './components/Header';
 import FeatureBoard from './components/FeatureBoard';
-import ReleaseGate from './components/ReleaseGate';
 import FeatureDetailModal from './components/FeatureDetailModal';
 import { MoveToFutureModal } from './components/FutureImprovements';
 import TicketDetailModal from './components/TicketDetailModal';
@@ -43,7 +42,7 @@ function MainApp() {
 
       <main className={`main-content ${activeTab === 'features' ? 'main-content-features' : ''}`}>
         {activeTab === 'features' && <FeatureBoard />}
-        {activeTab === 'release' && <ReleaseGate />}
+        {activeTab === 'release' && <TestingPage section="testoverview" hideSectionNav />}
         {activeTab === 'improvements' && <FutureImprovementsPage />}
         {TESTING_TAB_IDS.includes(activeTab) && <TestingPage section={activeTab} />}
         {activeTab === 'profile' && <ProfilePage />}

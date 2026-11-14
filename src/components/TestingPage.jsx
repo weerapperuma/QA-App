@@ -15,7 +15,7 @@ const TESTING_SECTIONS = [
 ];
 const MODULE_KEY = 'devbridge_testing_module';
 
-export default function TestingPage({ section }) {
+export default function TestingPage({ section, hideSectionNav = false }) {
   const {
     setActiveTab,
     projectFeatures = [],
@@ -64,40 +64,42 @@ export default function TestingPage({ section }) {
   return (
     <div className="testing-page">
       {/* Full-width bar: sections + add buttons */}
-      <div className="testing-bar">
-        <nav className="testing-nav" aria-label="Testing sections">
-          {TESTING_SECTIONS.map((s) => {
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                className={`testing-nav-btn ${current === s.id ? 'active' : ''} sec-${s.id}`}
-                onClick={() => setActiveTab(s.id)}
-                aria-current={current === s.id ? 'page' : undefined}
-              >
-                <Icon size={15} />
-                <span>{s.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-        <div className="testing-actions">
-          <button type="button" className="fb-btn" onClick={() => setIsCreateModuleModalOpen(true)} title="Add or manage modules">
-            <FolderPlus size={14} />
-            <span>Module</span>
-          </button>
-          <button
-            type="button"
-            className="fb-btn fb-btn-primary"
-            onClick={() => openCreateFeatureModal(activeModule ? { defaultModuleName: activeModule } : undefined)}
-            title={activeModule ? `Add a feature to ${activeModule}` : 'Add a feature'}
-          >
-            <Plus size={14} />
-            <span>Feature</span>
-          </button>
+      {!hideSectionNav && (
+        <div className="testing-bar">
+          <nav className="testing-nav" aria-label="Testing sections">
+            {TESTING_SECTIONS.map((s) => {
+              const Icon = s.icon;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`testing-nav-btn ${current === s.id ? 'active' : ''} sec-${s.id}`}
+                  onClick={() => setActiveTab(s.id)}
+                  aria-current={current === s.id ? 'page' : undefined}
+                >
+                  <Icon size={15} />
+                  <span>{s.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="testing-actions">
+            <button type="button" className="fb-btn" onClick={() => setIsCreateModuleModalOpen(true)} title="Add or manage modules">
+              <FolderPlus size={14} />
+              <span>Module</span>
+            </button>
+            <button
+              type="button"
+              className="fb-btn fb-btn-primary"
+              onClick={() => openCreateFeatureModal(activeModule ? { defaultModuleName: activeModule } : undefined)}
+              title={activeModule ? `Add a feature to ${activeModule}` : 'Add a feature'}
+            >
+              <Plus size={14} />
+              <span>Feature</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Simple module bar */}
       {showModuleBar && (
