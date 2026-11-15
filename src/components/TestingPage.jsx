@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ClipboardCheck, Bug, ShieldCheck, FolderPlus, Plus } from 'lucide-react';
+import { ClipboardCheck, Bug, FolderPlus, Plus } from 'lucide-react';
 import DevTestingPage from './DevTestingPage';
 import DefectsListView from './DefectsListView';
-import TestingOverview from './TestingOverview';
 import { TESTING_TAB_IDS, LAST_TESTING_KEY, DEFAULT_TESTING_TAB } from '../utils/testingTabs';
 
-// One "Testing" page with three sections. Each section keeps its own tab id
-// ('testoverview' | 'devtesting' | 'board') so existing links (notifications, buttons) still work.
+// One "Testing" page with two sections. Each section keeps its own tab id
+// ('devtesting' | 'board') so existing links (notifications, buttons) still work.
 const TESTING_SECTIONS = [
-  { id: 'testoverview', label: 'Features', icon: ShieldCheck },
   { id: 'devtesting', label: 'Dev Testing', icon: ClipboardCheck },
   { id: 'board', label: 'Defects & Suggestions', icon: Bug }
 ];

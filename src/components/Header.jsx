@@ -82,7 +82,7 @@ export default function Header() {
           <div className="brand-logo-icon" style={{ width: '32px', height: '32px' }}>
             <Layers size={18} />
           </div>
-          <span style={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>
+          <span className="brand-text" style={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>
             DevBridge
           </span>
         </div>
@@ -212,7 +212,6 @@ export default function Header() {
           onClick={() => setActiveTab('features')}
           disabled={workspaceLocked}
           title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
-          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <Layers size={14} color="var(--accent-dev)" />
           <span>Features</span>
@@ -234,7 +233,6 @@ export default function Header() {
           }}
           disabled={workspaceLocked}
           title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Features, Dev Testing, Defects & Suggestions'}
-          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <ClipboardCheck size={14} color="var(--accent-dev)" />
           <span>Testing</span>
@@ -245,7 +243,6 @@ export default function Header() {
           onClick={() => setActiveTab('release')}
           disabled={workspaceLocked}
           title={workspaceLocked ? 'Choose a working project first (My Profile)' : undefined}
-          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <ShieldCheck size={14} color="var(--accent-qa)" />
           <span>Release Gate</span>
@@ -256,7 +253,6 @@ export default function Header() {
           onClick={() => setActiveTab('improvements')}
           disabled={workspaceLocked}
           title={workspaceLocked ? 'Choose a working project first (My Profile)' : 'Future Improvements'}
-          style={{ fontSize: '0.82rem', padding: '0.35rem 0.9rem' }}
         >
           <Hourglass size={14} color="#f59e0b" />
           <span>Improvements</span>

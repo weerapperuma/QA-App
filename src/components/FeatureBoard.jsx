@@ -306,7 +306,8 @@ export default function FeatureBoard() {
     e.preventDefault();
     e.stopPropagation();
     const featId = e.dataTransfer.getData('text/plain') || draggedFeatId;
-    const position = dragOverTarget?.cardId === targetFeatId ? dragOverTarget.position : 'after';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
 
     cleanupDragState();
 
@@ -339,10 +340,22 @@ export default function FeatureBoard() {
       case 'ready_for_qa':
         return { next: 'in_qa', label: 'Start Testing', icon: ArrowRight };
       case 'in_qa':
-        if (openBugsCount === 0) {
-          return { next: 'verified', label: 'Verify & Close', icon: CheckCircle2 };
-        }
+        return { next: 'verified', label: 'Verify & Close', icon: CheckCircle2 };
+      default:
         return null;
+    }
+  };
+
+  const getPrevStatusAction = (status) => {
+    switch (status) {
+      case 'in_dev':
+        return { prev: 'backlog', label: 'Back to Pool' };
+      case 'ready_for_qa':
+        return { prev: 'in_dev', label: 'Back to Dev' };
+      case 'in_qa':
+        return { prev: 'ready_for_qa', label: 'Back to Ready' };
+      case 'verified':
+        return { prev: 'in_qa', label: 'Reopen in QA' };
       default:
         return null;
     }
@@ -1139,6 +1152,7 @@ export default function FeatureBoard() {
                       const rawNext = getNextStatusAction(feat.status, openBugCount);
                       // Verify & Close is a QA decision
                       const nextAction = rawNext && rawNext.next === 'verified' && !canQaDecide ? null : rawNext;
+                      const prevAction = getPrevStatusAction(feat.status);
                       const isDragging = draggedFeatId === feat.id;
 
                       const isCardTarget = dragOverTarget?.cardId === feat.id;
@@ -1270,20 +1284,36 @@ export default function FeatureBoard() {
                               )}
                             </div>
 
-                            {nextAction && (
-                              <button
-                                type="button"
-                                className="feat-card-next"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateFeatureStatus(feat.id, nextAction.next);
-                                }}
-                                title={nextAction.label}
-                              >
-                                <span>{nextAction.label}</span>
-                                <ArrowRight size={11} />
-                              </button>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {prevAction && (
+                                <button
+                                  type="button"
+                                  className="feat-card-next"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateFeatureStatus(feat.id, prevAction.prev);
+                                  }}
+                                  title={prevAction.label}
+                                  style={{ padding: '3px 6px' }}
+                                >
+                                  <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
+                                </button>
+                              )}
+                              {nextAction && (
+                                <button
+                                  type="button"
+                                  className="feat-card-next"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateFeatureStatus(feat.id, nextAction.next);
+                                  }}
+                                  title={nextAction.label}
+                                >
+                                  <span>{nextAction.label}</span>
+                                  <ArrowRight size={11} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
