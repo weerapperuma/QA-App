@@ -17,14 +17,17 @@ export default function TestingPage({ section, hideSectionNav = false }) {
   const {
     setActiveTab,
     currentUser,
-    getRoles,
     projectFeatures = [],
     allModuleNames = [],
     featureBoardModuleFilter,
     setIsCreateModuleModalOpen,
     openCreateFeatureModal
   } = useApp();
-  const myRoles = getRoles(currentUser);
+  const myRoles = Array.isArray(currentUser?.roles)
+    ? currentUser.roles
+    : currentUser?.role
+    ? [currentUser.role]
+    : [];
   const isQaOnly = myRoles.includes('QA') && !myRoles.includes('DEV') && !myRoles.includes('ADMIN');
   const visibleSections = isQaOnly ? TESTING_SECTIONS.filter((s) => s.id !== 'devtesting') : TESTING_SECTIONS;
   const rawCurrent = TESTING_TAB_IDS.includes(section) ? section : DEFAULT_TESTING_TAB;
