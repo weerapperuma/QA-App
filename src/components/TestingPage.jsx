@@ -16,13 +16,19 @@ const MODULE_KEY = 'devbridge_testing_module';
 export default function TestingPage({ section, hideSectionNav = false }) {
   const {
     setActiveTab,
+    currentUser,
+    getRoles,
     projectFeatures = [],
     allModuleNames = [],
     featureBoardModuleFilter,
     setIsCreateModuleModalOpen,
     openCreateFeatureModal
   } = useApp();
-  const current = TESTING_TAB_IDS.includes(section) ? section : DEFAULT_TESTING_TAB;
+  const myRoles = getRoles(currentUser);
+  const isQaOnly = myRoles.includes('QA') && !myRoles.includes('DEV') && !myRoles.includes('ADMIN');
+  const visibleSections = isQaOnly ? TESTING_SECTIONS.filter((s) => s.id !== 'devtesting') : TESTING_SECTIONS;
+  const rawCurrent = TESTING_TAB_IDS.includes(section) ? section : DEFAULT_TESTING_TAB;
+  const current = isQaOnly && rawCurrent === 'devtesting' ? 'board' : rawCurrent;
   const showModuleBar = current !== 'board'; // Defects & Suggestions has its own filters
 
   // Remember the last section so the "Testing" nav button reopens it
@@ -65,7 +71,7 @@ export default function TestingPage({ section, hideSectionNav = false }) {
       {!hideSectionNav && (
         <div className="testing-bar">
           <nav className="testing-nav" aria-label="Testing sections">
-            {TESTING_SECTIONS.map((s) => {
+            {visibleSections.map((s) => {
               const Icon = s.icon;
               return (
                 <button
