@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Check, Search, X, ClipboardCheck, ShieldCheck, Bug, Lightbulb, ChevronRight, Clock, Calendar, AlertTriangle, Edit2, GripVertical } from 'lucide-react';
+import { Check, CheckCircle2, Search, X, ClipboardCheck, ShieldCheck, Bug, Lightbulb, ChevronRight, Clock, Calendar, AlertTriangle, Edit2, GripVertical } from 'lucide-react';
 import { getDevTestProgress } from '../utils/devTesting';
 import { getFeatureTimelineStatus } from '../utils/timeline';
 
@@ -403,27 +403,13 @@ export default function TestingOverview({ moduleName: activeModule = '' }) {
                         {/* Dev Testing */}
                         <td className="to-col">
                           {dev.complete ? (
-                            <span className="to-done" title="All developer stages passed">
-                              <Check size={13} /> Done
+                            <span className="to-done" title="Dev Testing Completed">
+                              <CheckCircle2 size={15} /> Completed
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              className="to-progress"
-                              onClick={() => setActiveTab('devtesting')}
-                              title={dev.next ? `Next stage: ${dev.next.label}. Open Dev Testing` : 'Open Dev Testing'}
-                            >
-                              <span className="to-progress-top">
-                                <span>
-                                  {dev.passed}/{dev.total} stages
-                                </span>
-                                <ChevronRight size={11} />
-                              </span>
-                              <span className="feat-card-bar">
-                                <span className="feat-card-bar-fill" style={{ width: `${dev.pct}%`, display: 'block' }} />
-                              </span>
-                              {dev.next && <span className="to-sub">Next: {dev.next.short}</span>}
-                            </button>
+                            <span className="to-sub" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={12} /> Pending
+                            </span>
                           )}
                           {devUser && <span className="to-person">{devUser.name.split(' ')[0]}</span>}
                         </td>
@@ -431,8 +417,8 @@ export default function TestingOverview({ moduleName: activeModule = '' }) {
                         {/* QA Testing (auto) */}
                         <td className="to-col">
                           {qa.done ? (
-                            <span className="to-done" title="Closed by QA">
-                              <Check size={13} /> Done
+                            <span className="to-done" title="QA Testing Completed">
+                              <CheckCircle2 size={15} /> Completed
                             </span>
                           ) : (
                             <div className="to-qa">
