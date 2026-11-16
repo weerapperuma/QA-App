@@ -3880,6 +3880,22 @@ body {
 }
 
 @media (max-width: 768px) {
+  .mobile-kanban-nav {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    gap: 0.4rem;
+    overflow-x: visible;
+  }
+
+  .mobile-kanban-nav .mobile-col-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    text-align: center;
+  }
+
   .kanban-board,
   .kanban-board.with-pool {
     display: flex;
