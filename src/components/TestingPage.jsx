@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ClipboardCheck, Bug, FolderPlus, Plus } from 'lucide-react';
 import DevTestingPage from './DevTestingPage';
 import DefectsListView from './DefectsListView';
+import TestingOverview from './TestingOverview';
 import { TESTING_TAB_IDS, LAST_TESTING_KEY, DEFAULT_TESTING_TAB } from '../utils/testingTabs';
 
 // One "Testing" page with two sections. Each section keeps its own tab id
@@ -30,7 +31,9 @@ export default function TestingPage({ section, hideSectionNav = false }) {
     : [];
   const isQaOnly = myRoles.includes('QA') && !myRoles.includes('DEV') && !myRoles.includes('ADMIN');
   const visibleSections = isQaOnly ? TESTING_SECTIONS.filter((s) => s.id !== 'devtesting') : TESTING_SECTIONS;
-  const rawCurrent = TESTING_TAB_IDS.includes(section) ? section : DEFAULT_TESTING_TAB;
+  const rawCurrent = section === 'testoverview'
+    ? 'testoverview'
+    : (TESTING_TAB_IDS.includes(section) ? section : DEFAULT_TESTING_TAB);
   const current = isQaOnly && rawCurrent === 'devtesting' ? 'board' : rawCurrent;
   const showModuleBar = current !== 'board'; // Defects & Suggestions has its own filters
 
