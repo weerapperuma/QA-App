@@ -3906,9 +3906,11 @@ body {
     padding-bottom: 0.5rem;
   }
 
-  .kanban-board.with-pool .kanban-col {
-    width: 100%;
-    min-width: 0;
+  .kanban-board.with-pool .kanban-col,
+  .kanban-board.with-pool .feature-pool-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
     flex: none;
   }
 
@@ -3923,6 +3925,50 @@ body {
     max-height: 92vh;
     padding: 1rem;
     border-radius: var(--radius-lg);
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .fd-list {
+    overflow-y: visible !important;
+    max-height: none !important;
+  }
+
+  .fd-stats {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 0.4rem;
+  }
+
+  .fd-stat {
+    padding: 0.5rem 0.55rem;
+  }
+
+  .fd-stat-label {
+    font-size: 0.7rem;
+  }
+
+  .fd-stat-total {
+    font-size: 0.95rem;
+  }
+
+  .fd-stat-meta {
+    font-size: 0.65rem;
+  }
+
+  .fd-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .fd-item-row {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .fd-item-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 
